@@ -39,7 +39,8 @@ final class WorkspaceStoreTests: XCTestCase {
         store.createWorkspace(name: "alpha")
         let alphaId = store.workspaces[0].id
         store.select(id: alphaId)  // already selected
-        XCTAssertEqual(store.selectedId, alphaId)
+        XCTAssertEqual(store.selectedId, alphaId,
+                       "Re-selecting the already-selected workspace id should leave selectedId unchanged")
     }
 
     func testDeleteWorkspace() {
