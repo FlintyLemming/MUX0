@@ -31,9 +31,9 @@ enum HookDispatcher {
                              at: msg.timestamp,
                              detail: msg.toolDetail)
         case .idle:
-            // codex-wrapper always writes `notify = [..., "idle", "codex"]` to
-            // the overlay config.toml, which fires an `idle` on every turn
-            // completion. When the user also has `features.codex_hooks = true`,
+            // codex-wrapper always injects `notify = [..., "idle", "codex"]`
+            // via codex's `-c` CLI override, which fires an `idle` on every
+            // turn completion. When the user also has `features.codex_hooks = true`,
             // the Stop hook fires `finished` (with exitCode) at the same point,
             // and the two socket writes race: the notify-driven `idle` often
             // arrives after the Stop-driven `finished` and would overwrite the

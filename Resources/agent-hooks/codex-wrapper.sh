@@ -35,32 +35,30 @@ AGENT_HOOK="$MUX0_AGENT_HOOKS_DIR/agent-hook.sh"
 # Create an overlay CODEX_HOME so we don't mutate the user's real config.
 OVERLAY=$(mktemp -d -t mux0-codex.XXXXXX)
 
-# Build overlay config.toml: our top-level keys FIRST, then user's original.
-# Reason: TOML has no way to "close" a [section]; once inside one, subsequent
-# keys are scoped to it. Appending `notify = [...]` after a user section like
-# [notice.model_migrations] makes codex parse it as a sub-key of that section.
-# Putting our keys before any user [section] keeps them at the top level.
+# Symlink user's real CODEX_HOME contents into the overlay so reads see the
+# user's data. Note: Codex persists config.toml via `tempfile + rename(2)`,
+# which atomically REPLACES the directory entry — symlinks get clobbered
+# instead of followed. So a symlink alone isn't enough to make writes persist;
+# the cleanup trap below detects when the symlink got replaced by a regular
+# file (= codex rewrote it) and copies it back to the real CODEX_HOME.
+# Notify is injected per-process via codex's `-c key=value` CLI override
+# (see exec line below) so we never need to touch config.toml ourselves.
 USER_HOME="${CODEX_HOME:-$HOME/.codex}"
-{
-    echo "# --- mux0 hooks (prepended by codex-wrapper.sh; overlay only, user config untouched) ---"
-    echo "notify = [\"$EMIT\", \"idle\", \"codex\"]"
-    echo
-    if [ -f "$USER_HOME/config.toml" ]; then
-        cat "$USER_HOME/config.toml"
-    fi
-} > "$OVERLAY/config.toml"
-
-# Symlink remaining files/dirs (sessions, caches) so codex finds persistent state.
 if [ -d "$USER_HOME" ]; then
     for item in "$USER_HOME"/*; do
         [ -e "$item" ] || continue
         name=$(basename "$item")
         case "$name" in
-            config.toml) continue ;;
-            hooks.json)  continue ;;   # we override this below
+            hooks.json) continue ;;   # we override this below
         esac
         ln -sfn "$item" "$OVERLAY/$name"
     done
+fi
+# If the user has no config.toml yet, create a dangling symlink. If codex
+# writes via rename, the cleanup trap below will sync the resulting file back.
+if [ ! -e "$OVERLAY/config.toml" ] && [ ! -L "$OVERLAY/config.toml" ]; then
+    mkdir -p "$USER_HOME"
+    ln -sfn "$USER_HOME/config.toml" "$OVERLAY/config.toml"
 fi
 
 # Write experimental hooks.json. If the user hasn't enabled features.codex_hooks,
@@ -90,6 +88,15 @@ export CODEX_HOME="$OVERLAY"
 # Also mark the terminal idle on exit — otherwise the precmd hook has to fire
 # before the icon updates, which can lag if the user closes the window.
 cleanup() {
+    # Codex writes config.toml via `tempfile + rename(2)`, which replaces the
+    # symlink we placed at $OVERLAY/config.toml with a regular file. If that
+    # happened (i.e. it's no longer a symlink but is a real file), copy it
+    # back to the user's real CODEX_HOME so changes from `codex features
+    # enable`, `codex login`, etc. persist across sessions.
+    if [ -f "$OVERLAY/config.toml" ] && [ ! -L "$OVERLAY/config.toml" ]; then
+        mkdir -p "$USER_HOME"
+        cp -f "$OVERLAY/config.toml" "$USER_HOME/config.toml" 2>/dev/null || true
+    fi
     rm -rf "$OVERLAY" 2>/dev/null || true
     "$EMIT" idle codex 2>/dev/null || true
 }
@@ -102,4 +109,6 @@ trap cleanup EXIT INT TERM
 # since codex is actually idle at its input prompt.
 "$EMIT" idle codex 2>/dev/null || true
 
-exec "$REAL_CODEX" "$@"
+# Inject `notify` via -c so we don't have to mutate the user's config.toml.
+# Codex's `-c key=value` parses value as TOML; arrays work (see `codex --help`).
+exec "$REAL_CODEX" -c "notify=[\"$EMIT\", \"idle\", \"codex\"]" "$@"

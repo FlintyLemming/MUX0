@@ -75,7 +75,7 @@ Claude Code 的 `Notification` hook 本身是一个双重信号：**真实的权
 codex_hooks = true
 ```
 
-**为什么需要**：`codex_hooks` 是 OpenAI 标记的 `Stage::UnderDevelopment` 特性（源码在 `codex-rs/features/src/lib.rs`），官方保留修改权，默认关闭。我们的 wrapper 用 overlay `CODEX_HOME` 写 `hooks.json`，但 flag 必须在用户主 config 里声明——overlay 也无法替用户打开未声明的实验 flag。
+**为什么需要**：`codex_hooks` 是 OpenAI 标记的 `Stage::UnderDevelopment` 特性（源码在 `codex-rs/features/src/lib.rs`），官方保留修改权，默认关闭。我们的 wrapper 用 overlay `CODEX_HOME` 放 `hooks.json`，但 flag 必须在用户主 config 里声明——overlay 也无法替用户打开未声明的实验 flag。
 
 **不开的后果**：
 - `hooks.json` 被 codex 完全忽略，`UserPromptSubmit` / `PreToolUse` / `Stop` 都收不到
@@ -107,7 +107,11 @@ Codex parser 使用 Serde 的 `deny_unknown_fields`——flat 格式 `{"command"
 
 ## config.toml 注入的坑
 
-Codex wrapper 往 overlay config.toml 里加 `notify` 时必须**前置**（写在所有用户 `[section]` 之前），不能 append。TOML 里 section 无法"关闭"，一旦进入 section，后续 key 都归属它。如果用户 config 末尾是 `[notice.model_migrations]`，append 的 `notify = [...]` 会被当成 `notice.model_migrations.notify`，解析成"expected a string, got sequence"错误。
+Codex wrapper **不**写 overlay 版的 `config.toml`：overlay 里的 `config.toml` 起步是符号链接到用户真实 `~/.codex/config.toml`，`notify` 改用 codex 的 `-c notify=[...]` CLI 覆盖参数注入（仅作用于本次进程，不污染用户配置）。
+
+**坑：rename 会替换 symlink**。Codex 持久化 config 走的是 `tempfile + rename(2)`，而 `rename` 会把目录项**原子替换**——overlay 里的 symlink 会被替换成一个真实文件，并不会跟随 symlink 写到用户真实路径。所以 `codex features enable` / `codex login` 等子命令实际上是写到 `$OVERLAY/config.toml`（已变成真实文件，不再是 symlink）。为此 wrapper 的 `cleanup` trap 在 `rm -rf` 前会做一次检测：如果 `$OVERLAY/config.toml` 已经从 symlink 变成 regular file，就 `cp -f` 回 `$USER_HOME/config.toml`，然后再清 overlay。SIGKILL 跳过 trap 会丢失这次同步，与所有 temp-dir 方案同温层。
+
+**历史**：早期版本把用户 `config.toml` 拷贝到 overlay 并在前面 prepend `notify = [...]`，结果会写 config 的子命令把改动写进 overlay，进程退出 `rm -rf` 后丢失（无回写）。现在用 symlink + cleanup 回写 + `-c` 覆盖避免了这个 bug，也不再担心 TOML section 边界（早期方案为了避免被用户末尾的 `[notice.model_migrations]` 吞掉必须前置）。
 
 ## Historical: shell 状态来源
 
