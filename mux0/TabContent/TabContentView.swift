@@ -289,26 +289,21 @@ final class TabContentView: NSView {
     ///      ignored, not replayed.
     ///   2. Workspace-level `defaultCommand`.
     private func resolvedStartupCommand(forTerminal id: UUID) -> String? {
-        // (0) Quick action tab's first terminal → resolve via QuickActionsStore.
-        if let tab = store?.selectedWorkspace?.tabs.first(where: {
-                $0.layout.allTerminalIds().contains(id)
-            }),
-            let actionId = tab.quickActionId,
-            id == tab.layout.allTerminalIds().first,
-            let cmd = quickActionsStore?.command(for: actionId)
-        {
-            return "\(cmd)\n"
-        }
-
-        // (1) Agent resume.
-        if let pending = store?.consumePendingPrefill(terminalId: id),
-           let agent = HookMessage.Agent.fromResumeCommand(pending),
-           settingsStore?.get(agent.resumeSettingsKey) == "true" {
-            return pending
-        }
-
-        // (2) Workspace default command.
-        return store?.selectedWorkspace?.defaultCommand
+        let workspace = store?.selectedWorkspace
+        let tab = workspace?.tabs.first { $0.layout.allTerminalIds().contains(id) }
+        let pendingPrefill = store?.consumePendingPrefill(terminalId: id)
+        return StartupCommandResolver.resolve(
+            terminalId: id,
+            tab: tab,
+            workspaceDefaultCommand: workspace?.defaultCommand,
+            quickActionCommand: { [quickActionsStore] actionId in
+                quickActionsStore?.command(for: actionId)
+            },
+            isResumeEnabled: { [settingsStore] agent in
+                settingsStore?.get(agent.resumeSettingsKey) == "true"
+            },
+            pendingPrefill: pendingPrefill
+        )
     }
 
     private func focusTerminal(_ id: UUID) {
