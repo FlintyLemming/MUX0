@@ -188,9 +188,9 @@ WorkspaceStore 的每个 Tab 可关联一个**快捷操作 ID**（`TerminalTab.q
 
 **`QuickActionsStore`** 是 enabled 列表（按显示顺序排）+ 内置命令覆盖（per-id）+ 自定义条目数组的单一真理源，全部通过 `SettingsConfigStore` 持久化（3 个键：`mux0-quickactions-enabled` / `mux0-quickactions-builtin-command-<id>` / `mux0-quickactions-custom`）。`@Observable`，UI 直接订阅。
 
-**命令注入路径：** Tab 第一个终端启动时（`id == tab.layout.allTerminalIds().first`），`TabContentView.resolvedStartupCommand(forTerminal:)` 检测 `tab.quickActionId` 非空 → 调 `quickActionsStore.command(for: id)`：内置 = override 或默认（`gitui` / `claude` / `codex` / `opencode`），自定义 = 用户输入命令。返回值作为 `initial_input` + `\n` 喂给 ghostty surface，shell 启动后立即执行。Split 出的次级 pane 不会再跑（它不是 layout 第一个终端）。
+**命令注入路径：** Tab 第一个终端启动时（`id == tab.layout.allTerminalIds().first`），`TabContentView.resolvedStartupCommand(forTerminal:)` 委托给 `StartupCommandResolver.resolve` 检测 `tab.quickActionId` 非空 → 调 `quickActionsStore.command(for: id)`：内置 = override 或默认（`gitui` / `claude` / `codex` / `opencode`），自定义 = 用户输入命令。返回值作为 `initial_input` + `\n` 喂给 ghostty surface，shell 启动后立即执行。Split 出的次级 pane 不会再跑（它不是 layout 第一个终端）。例外：若 `quickActionId` 是 builtin agent（claude / codex / opencode）、对应 Resume toggle 为 ON、且 `pendingPrefills[terminalId]` 是匹配 agent 的 `<agent> --resume <id>`，则注入该 prefill 而**非** `quickActionsStore.command(...)` —— 用户对 builtin 命令的 override 在 resume 路径下被故意绕过，恢复 session 比保留 flag 更优先。详见 `StartupCommandResolver.resolve` 的 (0a) 分支与 `docs/agent-hooks.md` 的 Resume command 持久化章节。
 
-**重启恢复：** Tab 数据序列化到 UserDefaults，重启后 `tab.quickActionId` 还在 → 同一注入路径自动重新跑命令（gitui 重新打开、claude 重新连接……）。Surface 不序列化，重启后是新 ghostty surface。
+**重启恢复：** Tab 数据序列化到 UserDefaults，重启后 `tab.quickActionId` 还在 → 同一注入路径自动重新跑命令（gitui 重新打开；claude / codex / opencode 在 Resume toggle 开启且有匹配 prefill 时改注入 `<agent> --resume <id>` 续接上一会话，否则跑默认命令）。Surface 不序列化，重启后是新 ghostty surface。
 
 **图标：** `BuiltinQuickAction.iconSource` 三种来源——SF Symbol（gitui 用 `arrow.triangle.branch`）、Asset Catalog（claude / codex / opencode 用 lobe-icons SVG，`template-rendering-intent: template`）、首字母（自定义）。三种统一通过 `QuickActionIconView` 渲染，跟随 theme token tint。
 
