@@ -45,6 +45,8 @@ mux0/
 │   ├── TabBarView.swift       — NSView，水平标签条（新建/关闭/重命名/拖拽）
 │   ├── TabContentView.swift   — NSView，承载当前 workspace 的 tabs，管理 SplitPaneView 缓存
 │   ├── SplitPaneView.swift    — 递归 NSSplitView 渲染 SplitNode，drag divider + 键盘焦点导航
+│   ├── StartupCommandResolver.swift — 纯静态解析器，按 Quick Action / agent
+│   │   resume / workspace default 顺序决定每个新 surface 的 initial command
 │   ├── SurfaceScrollView.swift — NSScrollView 包装 GhosttyTerminalView，提供原生 overlay 滚动条（消费 ghostty SCROLLBAR/CELL_SIZE action，拖拽回写 `scroll_to_row:N`）
 │   └── PasteboardTypes.swift  — .mux0Tab UTI 常量
 ├── Ghostty/

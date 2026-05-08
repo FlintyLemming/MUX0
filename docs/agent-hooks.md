@@ -30,7 +30,7 @@ Agent turn 没有真实的 exit code，但 Claude Code / Codex 的 `PostToolUse`
 
 不依赖 `NSApplication.willTerminateNotification` 做"退出时提升"——⌘Q / 关窗 / 强退 / 崩溃路径下 willTerminate 触发与否不可靠，每次 hook 收到时立刻 save 才是稳定的持久化点。
 
-下次启动 surface 时，`TabContentView.resolvedStartupCommand(forTerminal:)` 通过 `consumePendingPrefill(terminalId:)` 读取该值，再走一遍 **读端 gate**：用 `HookMessage.Agent.fromResumeCommand` 按 prefix 反推 agent，看 `mux0-agent-resume-<agent>` 是否仍为 `true`，否则降级到 workspace `defaultCommand`。读端 gate 必要——它兜住"老版本写盘 / 用户在另一台机器同步了 UserDefaults / toggle 切换时机异常"导致的 stale 旧值。
+下次启动 surface 时，`TabContentView.resolvedStartupCommand(forTerminal:)` 通过 `consumePendingPrefill(terminalId:)` 读取该值，再走一遍 **读端 gate**：用 `HookMessage.Agent.fromResumeCommand` 按 prefix 反推 agent，看 `mux0-agent-resume-<agent>` 是否仍为 `true`，否则降级到 workspace `defaultCommand`。读端 gate 必要——它兜住"老版本写盘 / 用户在另一台机器同步了 UserDefaults / toggle 切换时机异常"导致的 stale 旧值。Quick Action 启动的 tab（侧边栏右上角 claude / codex / opencode 按钮）也走这条路径——`tab.quickActionId` 命中 builtin agent 且对应 Resume toggle 为 ON 时，注入 `pendingPrefills` 而不是裸命令；prefill 与 agent 类型不匹配时降级到 Quick Action 的原命令。
 
 读取**不**清空：pendingPrefills 持久保留"最近一次的恢复命令"，只在下一次新 prompt 触发 `recordResumeCommand` 时被覆盖。这保证"重启 → 自动恢复 → 没发任何 prompt → 再重启"仍然能恢复同一会话；代价是用户手动退出 agent 之后该字段会变 stale，下次重启仍会自动 `claude --resume <id>`，不过 claude/codex 都接受任意旧 session id（只是恢复一段久远对话），不会报错。
 
