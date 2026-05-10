@@ -88,14 +88,28 @@ export CODEX_HOME="$OVERLAY"
 # Also mark the terminal idle on exit — otherwise the precmd hook has to fire
 # before the icon updates, which can lag if the user closes the window.
 cleanup() {
-    # Codex writes config.toml via `tempfile + rename(2)`, which replaces the
-    # symlink we placed at $OVERLAY/config.toml with a regular file. If that
-    # happened (i.e. it's no longer a symlink but is a real file), copy it
-    # back to the user's real CODEX_HOME so changes from `codex features
-    # enable`, `codex login`, etc. persist across sessions.
-    if [ -f "$OVERLAY/config.toml" ] && [ ! -L "$OVERLAY/config.toml" ]; then
-        mkdir -p "$USER_HOME"
-        cp -f "$OVERLAY/config.toml" "$USER_HOME/config.toml" 2>/dev/null || true
+    # Codex persists state files (config.toml, hooks.state, possibly others)
+    # via `tempfile + rename(2)`, which atomically REPLACES the symlink we
+    # placed in the overlay with a regular file. Any top-level entry that's
+    # now a regular file (not a symlink) is something codex wrote during this
+    # session; copy it back to the user's real CODEX_HOME so it survives the
+    # `rm -rf` below. This is what lets `codex features enable`, `codex
+    # login`, and — most importantly — hook trust approvals from `/hooks`
+    # persist across mux0-launched codex sessions.
+    #
+    # hooks.json is excluded because we wrote it ourselves into the overlay
+    # and the user's real CODEX_HOME shouldn't grow a mux0-managed file.
+    if [ -d "$OVERLAY" ]; then
+        for item in "$OVERLAY"/*; do
+            [ -f "$item" ] || continue
+            [ -L "$item" ] && continue
+            name=$(basename "$item")
+            case "$name" in
+                hooks.json) continue ;;
+            esac
+            mkdir -p "$USER_HOME"
+            cp -f "$item" "$USER_HOME/$name" 2>/dev/null || true
+        done
     fi
     rm -rf "$OVERLAY" 2>/dev/null || true
     "$EMIT" idle codex 2>/dev/null || true
