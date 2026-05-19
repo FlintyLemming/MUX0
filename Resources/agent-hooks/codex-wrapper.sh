@@ -116,13 +116,28 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Emit idle BEFORE exec: shell preexec already marked us running when the user
-# typed `codex`, but codex's own `notify` only fires on turn completion, and
-# hooks.json requires features.codex_hooks. Without this, the UI sits on
-# "running" from launch until the first turn completes — which is wrong,
-# since codex is actually idle at its input prompt.
+# Emit idle BEFORE handing off to codex: shell preexec already marked us
+# running when the user typed `codex`, but codex's own `notify` only fires
+# on turn completion. Without this, the UI sits on "running" from launch
+# until the first turn completes — wrong, since codex is actually idle at
+# its input prompt.
 "$EMIT" idle codex 2>/dev/null || true
 
-# Inject `notify` via -c so we don't have to mutate the user's config.toml.
-# Codex's `-c key=value` parses value as TOML; arrays work (see `codex --help`).
-exec "$REAL_CODEX" -c "notify=[\"$EMIT\", \"idle\", \"codex\"]" "$@"
+# Run codex as a subprocess instead of `exec`ing it. `exec` would replace
+# this bash process entirely, and bash does NOT fire EXIT/INT/TERM traps
+# after a successful exec — the overlay below would leak in $TMPDIR and,
+# more importantly, the cleanup trap would never copy codex's persisted
+# state files (hooks.state for `/hooks` trust approvals, config.toml for
+# `codex login` / `codex features enable`) back to the user's real
+# CODEX_HOME. The next mux0-launched codex session would then see a fresh
+# untrusted state and silently never run any hook.
+#
+# `notify` is injected via -c so we don't have to mutate the user's
+# config.toml. Codex's `-c key=value` parses value as TOML; arrays work
+# (see `codex --help`).
+#
+# `|| EXIT_CODE=$?` consumes a non-zero exit so `set -e` (top of file) does
+# not short-circuit before we forward the code via the final `exit`.
+EXIT_CODE=0
+"$REAL_CODEX" -c "notify=[\"$EMIT\", \"idle\", \"codex\"]" "$@" || EXIT_CODE=$?
+exit "$EXIT_CODE"
