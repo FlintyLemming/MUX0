@@ -77,11 +77,20 @@ jobs:
       - name: Build libghostty
         run: ./scripts/build-vendor.sh
 
+      - name: Pack libghostty vendor
+        # actions/upload-artifact@v4 会把 path 的"least common ancestor"作为
+        # archive root，导致 path: Vendor/ghostty 上传的 archive 里只剩
+        # include/ lib/ share/ 子树（没有 Vendor/ghostty/ 前缀），下游 download
+        # 还原时容易落错位置。改成自己 tar 打包，路径布局 100% 可控。
+        run: |
+          ls -la Vendor/ghostty/lib Vendor/ghostty/include
+          tar -czvf /tmp/libghostty-vendor.tar.gz -C Vendor/ghostty .
+
       - name: Upload libghostty vendor artifact
         uses: actions/upload-artifact@v4
         with:
           name: libghostty-vendor
-          path: Vendor/ghostty
+          path: /tmp/libghostty-vendor.tar.gz
           if-no-files-found: error
           retention-days: 1
 
@@ -156,13 +165,17 @@ jobs:
 
       - name: Download libghostty vendor artifact
         # 由上游 build_libghostty job 在 macos-15 上构建 — 见 job 头部注释。
-        # 不指定 path，默认下到 $GITHUB_WORKSPACE。upload-artifact@v4 在 archive
-        # 内保留 path 的完整相对路径（Vendor/ghostty/include/...），所以这里下回
-        # workspace 根目录就自动还原成 Vendor/ghostty/include / lib / share，
-        # 与本地跑 ./scripts/build-vendor.sh 的产物布局一致。
+        # 上游用 tar 打包，路径布局可控；这里解包到 Vendor/ghostty/。
         uses: actions/download-artifact@v4
         with:
           name: libghostty-vendor
+          path: /tmp
+
+      - name: Unpack libghostty vendor
+        run: |
+          mkdir -p Vendor/ghostty
+          tar -xzvf /tmp/libghostty-vendor.tar.gz -C Vendor/ghostty
+          ls -la Vendor/ghostty/lib Vendor/ghostty/include
 
       - name: Generate Xcode project
         run: xcodegen generate
