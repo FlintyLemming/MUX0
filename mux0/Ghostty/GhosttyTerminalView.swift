@@ -148,7 +148,7 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
 
     /// 切换前台 terminal。
     /// - 把 `front` 设为唯一允许 draw / 接收事件的 surface
-    /// - 其它 surface: focus=false, occlusion=true, RELEASE 按键, 光标 park 到屏外
+    /// - 其它 surface: focus=false, visible=false, RELEASE 按键, 光标 park 到屏外
     /// - 不再发 click cycle（之前的 click cycle 反而在 ghostty 里建立了 selection anchor，
     ///   配合 ghostty 的 mouseLocation 轮询正好造成"鼠标飘到哪选到哪"）
     static func makeFrontmost(_ front: GhosttyTerminalView?) {
@@ -167,7 +167,15 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
             guard let s = v.surface else { continue }
             let isFront = (v === front)
             ghostty_surface_set_focus(s, isFront)
-            ghostty_surface_set_occlusion(s, !isFront)
+            // 函数名是 `set_occlusion` 但 ghostty C 形参的语义是 `visible` —— true
+            // 表示"surface 可见,内部 displayLink 跑、render thread 推帧"; false 表示
+            // "被遮挡,停 displayLink 省 GPU"（见上游 src/Surface.zig
+            // occlusionCallback 注释 + src/renderer/generic.zig setVisible）。
+            // mux0 早期照着函数名按 occluded 语义传 `!isFront`，结果"前台"被告知
+            // visible=false 而停渲染,"非前台"反而 visible=true 在 vsync —— 表现就是
+            // v0.5.0 release 上"必须切 tab 才出内容,切完打字又卡"的 bug。
+            // 这里按 ghostty 现在的契约: 前台 visible=true,非前台 visible=false。
+            ghostty_surface_set_occlusion(s, isFront)
             // 任何切换都对所有 surface 做一次 defensive RELEASE，
             // 防止前一次交互留下未配对的 PRESS。RELEASE 不会影响 ghostty 已提交的选区，
             // 仅清理 button 状态，所以是安全的。
