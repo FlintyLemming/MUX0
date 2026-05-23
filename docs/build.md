@@ -56,6 +56,12 @@ Vendor/
 ## CI 注意事项
 
 - CI 环境需要预置 Vendor/ghostty（或在 CI 里运行 build-vendor.sh）
+- 在 release workflow 里 libghostty 单独跑在一个 `macos-15` job 上构建，再以
+  artifact 传给主 `macos-26` build job —— 因为 zig 0.15.2 自带的 darwin libc
+  tubs 与 macOS 26 SDK 的 libSystem.tbd 不兼容（compiler_rt 引用的
+  `__availability_version_check` 等符号在新 SDK 上找不到），而 macos-26
+  runner 又只装了 macOS 26.x SDK 没有老 SDK 兜底。等 ghostty 上游适配
+  zig 0.16+ 后可以删掉这个分离 job
 - 设置 `SKIP_GHOSTTY_INTEGRATION=1` 可跳过需要 libghostty 的集成测试
 - `xcodebuild` 需要 `-destination 'platform=macOS'` 在非 GUI 环境下运行
 
