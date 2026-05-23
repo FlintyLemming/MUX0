@@ -50,7 +50,7 @@ Agent turn 没有真实的 exit code，但 Claude Code / Codex 的 `PostToolUse`
 
 | Agent | 机制 | 文件 |
 |-------|------|------|
-| Claude Code | `--settings` 注入 hooks JSON（SessionStart/UserPromptSubmit/PreToolUse/Stop/Notification/SessionEnd） | `claude-wrapper.sh` |
+| Claude Code | `claude --settings <json>` 注入 hooks（SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop/Notification/SessionEnd）。**不**改 `CLAUDE_CONFIG_DIR`——claude 用 `sha256(CLAUDE_CONFIG_DIR)[:8]` 作为 macOS keychain service 名后缀，换路径就会跟原生 claude 的 keychain 登录态对不上。对 `mcp`/`doctor`/`--remote-control` 等 commander 子命令做 passthrough（它们的 sub-parser 不识别 `--settings`） | `claude-wrapper.sh` |
 | OpenCode | 插件订阅 bus 事件（tool.execute.before / permission.asked / session.idle 等） | `opencode-plugin/mux0-status.js` |
 | Codex | 实验性 `hooks.json` + `notify` 兜底 | `codex-wrapper.sh` |
 
