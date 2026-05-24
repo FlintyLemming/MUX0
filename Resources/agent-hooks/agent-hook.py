@@ -17,7 +17,6 @@ Subcommands:
 import json
 import os
 import re
-import sqlite3
 import time
 import fcntl
 import socket
@@ -110,10 +109,17 @@ def read_transcript_summary(path: str) -> str:
     return ""
 
 
-def _extract_user_text(d: dict) -> str:
-    """Pull plain-text content out of a transcript user row, skipping slash
-    commands like `<command-name>/rename</command-name>` so the fallback
-    title reflects real conversation rather than a meta-command."""
+def _extract_user_text_from_claude(d: dict) -> str:
+    """Pull plain-text content out of a Claude transcript user row, skipping
+    slash commands and meta-injections so the title reflects real
+    conversation rather than `/clear`-style noise.
+
+    Handles both string and typed-content-block
+    (`[{type:"text",text:"..."}, ...]`) shapes that Claude uses for user
+    messages.
+    """
+    if d.get("type") != "user" or d.get("isMeta"):
+        return ""
     msg = d.get("message", {})
     content = msg.get("content", "") if isinstance(msg, dict) else ""
     if isinstance(content, list):
@@ -129,21 +135,27 @@ def _extract_user_text(d: dict) -> str:
     return " ".join(text.split())
 
 
-def read_ai_title(path: str) -> str:
-    """Read Claude's session title from the transcript JSONL.
+def _extract_user_text_from_codex(d: dict) -> str:
+    """Pull plain-text out of a Codex rollout `event_msg` row whose
+    `payload.type == "user_message"`. Codex stores user prompts as
+    `{"type":"event_msg","payload":{"type":"user_message","message":"..."}}`.
+    """
+    if d.get("type") != "event_msg":
+        return ""
+    payload = d.get("payload", {})
+    if not isinstance(payload, dict) or payload.get("type") != "user_message":
+        return ""
+    msg = payload.get("message", "")
+    if not isinstance(msg, str):
+        return ""
+    text = msg.strip()
+    return " ".join(text.split()) if text else ""
 
-    Priority (claude's `/resume` picker uses the same order):
-      1. `{"type":"custom-title","customTitle":"..."}` — written by `/rename`,
-         user intent.
-      2. `{"type":"ai-title","aiTitle":"..."}` — async LLM output. Claude
-         only generates these once the session has enough content; short
-         exchanges like "hi"/"hello" never trigger it.
-      3. First real user prompt (truncated). Mirrors Codex's `first_user_message`
-         fallback so short Claude sessions still get a sensible tab name
-         before the LLM-derived title is available.
 
-    Single forward pass keeps the latest of each kind. Truncated to
-    SUMMARY_MAXLEN. Empty string on any error.
+def _first_user_prompt(path: str, extractor) -> str:
+    """Forward-scan `path` line by line, return the first non-empty user
+    prompt as extracted by `extractor(d)`. Truncated to SUMMARY_MAXLEN.
+    Empty string on any IO/parse error.
     """
     if not path:
         return ""
@@ -152,9 +164,6 @@ def read_ai_title(path: str) -> str:
             lines = f.readlines()
     except (FileNotFoundError, IsADirectoryError, PermissionError, OSError):
         return ""
-    custom = ""
-    ai = ""
-    first_prompt = ""
     for line in lines:
         try:
             d = json.loads(line)
@@ -162,70 +171,60 @@ def read_ai_title(path: str) -> str:
             continue
         if not isinstance(d, dict):
             continue
-        t = d.get("type")
-        if t == "custom-title":
-            val = d.get("customTitle") or ""
-            if isinstance(val, str) and val:
-                custom = val
-        elif t == "ai-title":
-            val = d.get("aiTitle") or ""
-            if isinstance(val, str) and val:
-                ai = val
-        elif t == "user" and not first_prompt and not d.get("isMeta"):
-            text = _extract_user_text(d)
-            if text:
-                first_prompt = text
-    chosen = custom or ai or first_prompt
-    return chosen[:SUMMARY_MAXLEN]
+        text = extractor(d)
+        if text:
+            return text[:SUMMARY_MAXLEN]
+    return ""
 
 
-def read_codex_title(session_id: str) -> str:
-    """Read Codex thread title from `~/.codex/state_*.sqlite` (newest schema
-    version), querying `threads.title WHERE id = ?`. Empty on any failure.
+def read_claude_title(path: str) -> str:
+    """First real (non-slash-command, non-meta) user prompt from a Claude
+    transcript JSONL. Mirrors cmux's strategy: ignore Claude's optional
+    LLM-generated `ai-title` / `custom-title` rows and trust the user's
+    own first input as the stable per-session label.
+    """
+    return _first_user_prompt(path, _extract_user_text_from_claude)
 
-    The `state_N.sqlite` filename embeds Codex's schema version (currently 5);
-    we glob and take the highest N so this survives future migrations without
-    a code change.
+
+def _find_codex_rollout(session_id: str) -> str:
+    """Locate the rollout JSONL for `session_id` under `CODEX_HOME / sessions`.
+
+    Codex names rollouts `rollout-<timestamp>-<session_id>.jsonl` under a
+    nested `<year>/<month>/<day>/` tree. We glob for the session_id suffix
+    and take the most recent match (there should normally be exactly one).
+    Returns empty string if the id is malformed or no file is found.
     """
     if not session_id or not SESSION_ID_RE.match(session_id):
         return ""
+    sessions_dir = CODEX_HOME / "sessions"
+    matches = sorted(sessions_dir.glob(f"**/rollout-*-{session_id}.jsonl"))
+    if not matches:
+        return ""
+    return str(matches[-1])
 
-    def _ver(p: pathlib.Path) -> int:
-        try:
-            return int(p.stem.split("_", 1)[1])
-        except (IndexError, ValueError):
-            return -1
 
-    candidates = sorted(CODEX_HOME.glob("state_*.sqlite"), key=_ver)
-    if not candidates:
-        return ""
-    db = candidates[-1]
-    try:
-        # mode=ro + small timeout so we never block on Codex's write lock.
-        # sqlite3.OperationalError covers missing/inaccessible db files too,
-        # so the single sqlite3.Error catch below handles all failure modes.
-        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=0.5)
-        try:
-            row = con.execute(
-                "SELECT title FROM threads WHERE id = ?", (session_id,)
-            ).fetchone()
-        finally:
-            con.close()
-    except sqlite3.Error:
-        return ""
-    if not row or not row[0]:
-        return ""
-    return str(row[0])[:SUMMARY_MAXLEN]
+def read_codex_title(session_id: str) -> str:
+    """First user prompt from the Codex rollout JSONL for `session_id`.
+    Returns empty string when the rollout isn't available yet (e.g. the
+    first `prompt` hook fires before the file is flushed) or has no user
+    message.
+    """
+    return _first_user_prompt(_find_codex_rollout(session_id),
+                              _extract_user_text_from_codex)
 
 
 def _session_title_for(agent: str, transcript_path: str, session_id: str) -> str:
-    """Read the human-readable session title for `agent`. Returns "" if not
-    available (LLM hasn't generated it yet, file missing, etc.)."""
+    """Read the first-user-prompt session title for `agent`. Returns "" when
+    the source file isn't readable yet.
+
+    OpenCode flows through its own JS plugin (mux0-status.js) which fills in
+    sessionTitle on the wire; this branch is unreachable for opencode in
+    practice but kept for parity.
+    """
     if agent == "claude":
-        return read_ai_title(transcript_path or "")
+        return read_claude_title(transcript_path or "")
     if agent == "codex":
         return read_codex_title(session_id)
-    # opencode flows through its own JS plugin; never reaches here.
     return ""
 
 
