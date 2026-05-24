@@ -346,3 +346,132 @@ def test_dispatch_pretool_does_not_emit_resume_command(tmp_path):
                                  "tool_input": {"command": "ls"}},
                                 "t9", sf, 6_000_001.0)
     assert "resumeCommand" not in emit
+
+
+# ---------- read_ai_title ----------
+
+def test_read_ai_title_picks_last(tmp_path):
+    p = tmp_path / "t.jsonl"
+    p.write_text(
+        json.dumps({"type": "ai-title", "aiTitle": "Old title"}) + "\n" +
+        json.dumps({"type": "user", "content": "noise"}) + "\n" +
+        json.dumps({"type": "ai-title", "aiTitle": "Latest title"}) + "\n"
+    )
+    assert agent_hook.read_ai_title(str(p)) == "Latest title"
+
+
+def test_read_ai_title_truncates_to_200(tmp_path):
+    p = tmp_path / "t.jsonl"
+    long = "x" * 500
+    p.write_text(json.dumps({"type": "ai-title", "aiTitle": long}) + "\n")
+    assert len(agent_hook.read_ai_title(str(p))) == 200
+
+
+def test_read_ai_title_missing_file():
+    assert agent_hook.read_ai_title("/nonexistent/path.jsonl") == ""
+
+
+def test_read_ai_title_no_match(tmp_path):
+    p = tmp_path / "t.jsonl"
+    p.write_text(json.dumps({"type": "user", "content": "x"}) + "\n")
+    assert agent_hook.read_ai_title(str(p)) == ""
+
+
+def test_read_ai_title_skips_malformed_lines(tmp_path):
+    p = tmp_path / "t.jsonl"
+    p.write_text(
+        "not json\n" +
+        json.dumps({"type": "ai-title", "aiTitle": "Good"}) + "\n"
+    )
+    assert agent_hook.read_ai_title(str(p)) == "Good"
+
+
+# ---------- read_codex_title ----------
+
+def test_read_codex_title_reads_from_db(tmp_path, monkeypatch):
+    import sqlite3
+    db = tmp_path / "state_5.sqlite"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT)")
+    con.execute("INSERT INTO threads VALUES (?, ?)",
+                ("abc-123", "Codex session name"))
+    con.commit()
+    con.close()
+    monkeypatch.setattr(agent_hook, "CODEX_HOME", tmp_path)
+    assert agent_hook.read_codex_title("abc-123") == "Codex session name"
+
+
+def test_read_codex_title_picks_newest_schema(tmp_path, monkeypatch):
+    import sqlite3
+    # Two DB schema versions; we should query state_99 (newest).
+    for ver, title in [(3, "Old"), (99, "New")]:
+        db = tmp_path / f"state_{ver}.sqlite"
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT)")
+        con.execute("INSERT INTO threads VALUES (?, ?)", ("sid", title))
+        con.commit()
+        con.close()
+    monkeypatch.setattr(agent_hook, "CODEX_HOME", tmp_path)
+    assert agent_hook.read_codex_title("sid") == "New"
+
+
+def test_read_codex_title_no_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_hook, "CODEX_HOME", tmp_path)
+    assert agent_hook.read_codex_title("sid") == ""
+
+
+def test_read_codex_title_rejects_invalid_session_id(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_hook, "CODEX_HOME", tmp_path)
+    assert agent_hook.read_codex_title("bad; DROP TABLE") == ""
+
+
+def test_read_codex_title_truncates_to_200(tmp_path, monkeypatch):
+    import sqlite3
+    db = tmp_path / "state_5.sqlite"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT)")
+    con.execute("INSERT INTO threads VALUES (?, ?)", ("sid", "x" * 500))
+    con.commit()
+    con.close()
+    monkeypatch.setattr(agent_hook, "CODEX_HOME", tmp_path)
+    assert len(agent_hook.read_codex_title("sid")) == 200
+
+
+# ---------- dispatch sessionTitle attachment ----------
+
+def test_dispatch_claude_prompt_attaches_session_title(tmp_path):
+    sf = tmp_path / "sessions.json"
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text(
+        json.dumps({"type": "ai-title", "aiTitle": "My session"}) + "\n"
+    )
+    emit = agent_hook.dispatch("prompt", "claude",
+                                {"session_id": "s1",
+                                 "transcript_path": str(transcript)},
+                                "term1", sf, 1.0)
+    assert emit.get("sessionTitle") == "My session"
+
+
+def test_dispatch_codex_prompt_attaches_session_title(tmp_path, monkeypatch):
+    import sqlite3
+    db = tmp_path / "state_5.sqlite"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT)")
+    con.execute("INSERT INTO threads VALUES (?, ?)", ("cdx-1", "Codex name"))
+    con.commit()
+    con.close()
+    monkeypatch.setattr(agent_hook, "CODEX_HOME", tmp_path)
+    sf = tmp_path / "sessions.json"
+    emit = agent_hook.dispatch("prompt", "codex",
+                                {"session_id": "cdx-1"},
+                                "term-c", sf, 1.0)
+    assert emit.get("sessionTitle") == "Codex name"
+
+
+def test_dispatch_no_session_title_when_empty(tmp_path):
+    sf = tmp_path / "sessions.json"
+    # No transcript_path → read_ai_title returns ""
+    emit = agent_hook.dispatch("prompt", "claude",
+                                {"session_id": "s1"},
+                                "term1", sf, 1.0)
+    assert "sessionTitle" not in emit

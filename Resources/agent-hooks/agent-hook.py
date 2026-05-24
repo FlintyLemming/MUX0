@@ -30,6 +30,8 @@ SUMMARY_MAXLEN = 200
 # into the persisted `initial_input`.
 SESSION_ID_RE = re.compile(r"\A[A-Za-z0-9_-]+\Z")
 
+CODEX_HOME = pathlib.Path("~/.codex").expanduser()
+
 
 def parse_payload() -> dict:
     """Parse _MUX0_PAYLOAD env var as JSON. Returns {} on any error."""
@@ -104,6 +106,83 @@ def read_transcript_summary(path: str) -> str:
         content = " ".join(content.split())
         if content:
             return content[:SUMMARY_MAXLEN]
+    return ""
+
+
+def read_ai_title(path: str) -> str:
+    """Read Claude transcript JSONL, return last `{"type":"ai-title","aiTitle":"..."}`
+    entry's title, truncated to SUMMARY_MAXLEN. Empty string on any error.
+
+    Claude Code persists an LLM-generated session title as repeated `ai-title`
+    rows throughout the transcript (typically same value each time once
+    generated). We reverse-scan and return the most recent one to pick up
+    title rewrites if any.
+    """
+    if not path:
+        return ""
+    try:
+        with open(path) as f:
+            lines = f.readlines()
+    except (FileNotFoundError, IsADirectoryError, PermissionError, OSError):
+        return ""
+    for line in reversed(lines):
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(d, dict) and d.get("type") == "ai-title":
+            title = d.get("aiTitle") or ""
+            if isinstance(title, str) and title:
+                return title[:SUMMARY_MAXLEN]
+    return ""
+
+
+def read_codex_title(session_id: str) -> str:
+    """Read Codex thread title from `~/.codex/state_*.sqlite` (newest schema
+    version), querying `threads.title WHERE id = ?`. Empty on any failure.
+
+    The `state_N.sqlite` filename embeds Codex's schema version (currently 5);
+    we glob and take the highest N so this survives future migrations without
+    a code change.
+    """
+    if not session_id or not SESSION_ID_RE.match(session_id):
+        return ""
+
+    def _ver(p: pathlib.Path) -> int:
+        try:
+            return int(p.stem.split("_", 1)[1])
+        except (IndexError, ValueError):
+            return -1
+
+    candidates = sorted(CODEX_HOME.glob("state_*.sqlite"), key=_ver)
+    if not candidates:
+        return ""
+    db = candidates[-1]
+    try:
+        import sqlite3
+        # mode=ro + small timeout so we never block on Codex's write lock.
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=0.5)
+        try:
+            row = con.execute(
+                "SELECT title FROM threads WHERE id = ?", (session_id,)
+            ).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return ""
+    if not row or not row[0]:
+        return ""
+    return str(row[0])[:SUMMARY_MAXLEN]
+
+
+def _session_title_for(agent: str, transcript_path: str, session_id: str) -> str:
+    """Read the human-readable session title for `agent`. Returns "" if not
+    available (LLM hasn't generated it yet, file missing, etc.)."""
+    if agent == "claude":
+        return read_ai_title(transcript_path or "")
+    if agent == "codex":
+        return read_codex_title(session_id)
+    # opencode flows through its own JS plugin; never reaches here.
     return ""
 
 
@@ -223,6 +302,9 @@ def dispatch(subcmd: str, agent: str, payload: dict,
         resume = resume_command_for(agent, str(session_id))
         if resume:
             emit["resumeCommand"] = resume
+        title = _session_title_for(agent, entry.get("transcriptPath"), str(session_id))
+        if title:
+            emit["sessionTitle"] = title
 
     elif subcmd == "pretool":
         tool = payload.get("tool_name", "") or ""
@@ -249,6 +331,9 @@ def dispatch(subcmd: str, agent: str, payload: dict,
         emit = {"event": "finished", "at": now, "exitCode": exit_code}
         if summary:
             emit["summary"] = summary
+        title = _session_title_for(agent, entry.get("transcriptPath"), str(session_id))
+        if title:
+            emit["sessionTitle"] = title
         entries.pop(session_id, None)
 
     sessions_doc = gc_stale(sessions_doc, now)
