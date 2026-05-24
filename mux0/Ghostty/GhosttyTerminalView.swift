@@ -101,6 +101,12 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
     /// SplitPaneView's `mouseDown` because this view consumes the event first.
     var onFocus: (() -> Void)?
 
+    /// Injected by TabContentView. Fired on direct user activity in this pane
+    /// (mouseDown / keyDown). Used to mark the per-terminal agent status as
+    /// read — same effect tab/workspace switching has, but per-pane and driven
+    /// by interaction rather than navigation.
+    var onUserActivity: (() -> Void)?
+
     /// Map from the opaque ghostty_surface_t pointer back to the owning view.
     /// The action callback only has a ghostty_target_s with the surface handle; this
     /// lookup is how we get back to Swift-land. Weak references so a freed surface
@@ -462,6 +468,7 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
 
     override func keyDown(with event: NSEvent) {
         guard let s = surface else { super.keyDown(with: event); return }
+        onUserActivity?()
 
         // 这是 ghostty macOS 上游采用的"先走 NSTextInputClient、再单次交付给 ghostty"协议：
         //
@@ -551,6 +558,7 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
         // This view consumes the event before SplitPaneView sees it, so notify
         // the owner here so `focusedTerminalId` tracks the actual user focus.
         onFocus?()
+        onUserActivity?()
         Self.makeFrontmost(self)
         window?.makeFirstResponder(self)
         guard let s = surface else { return }

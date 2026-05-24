@@ -22,6 +22,11 @@ import AppKit
 final class TabContentView: NSView {
     var store: WorkspaceStore?
     var pwdStore: TerminalPwdStore?
+    /// Per-terminal agent status store. Used by `buildSplitPane` to wire
+    /// `GhosttyTerminalView.onUserActivity` → `markRead`, so clicking or
+    /// typing in a pane clears its solid status dot (same effect as switching
+    /// tabs, but scoped to just the interacted pane).
+    var statusStore: TerminalStatusStore?
     /// Used only by `terminalViewFor` to gate consumption of pending agent
     /// resume commands against the user's Settings → Agents → Resume toggle.
     var settingsStore: SettingsConfigStore?
@@ -248,6 +253,9 @@ final class TabContentView: NSView {
                 tv.onFocus = { [weak self] in
                     guard let self, let wsId = self.store?.selectedId else { return }
                     self.store?.updateFocusedTerminal(id: id, tabId: tabId, in: wsId)
+                }
+                tv.onUserActivity = { [weak self] in
+                    self?.statusStore?.markRead(terminalIds: [id])
                 }
                 return tv
             },
