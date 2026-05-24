@@ -1,0 +1,65 @@
+import XCTest
+@testable import mux0
+
+final class TerminalSessionTitleStoreTests: XCTestCase {
+
+    func testDefaultIsEmpty() {
+        let store = TerminalSessionTitleStore(persistenceKey: "test-\(UUID())")
+        XCTAssertNil(store.title(for: UUID()))
+    }
+
+    func testUpdateStoresValue() {
+        let store = TerminalSessionTitleStore(persistenceKey: "test-\(UUID())")
+        let id = UUID()
+        store.update(terminalId: id, title: "Hello")
+        XCTAssertEqual(store.title(for: id), "Hello")
+    }
+
+    func testUpdateEmptyStringIsIgnored() {
+        let store = TerminalSessionTitleStore(persistenceKey: "test-\(UUID())")
+        let id = UUID()
+        store.update(terminalId: id, title: "Real title")
+        store.update(terminalId: id, title: "")
+        XCTAssertEqual(store.title(for: id), "Real title")
+    }
+
+    func testUpdateWhitespaceOnlyIsIgnored() {
+        let store = TerminalSessionTitleStore(persistenceKey: "test-\(UUID())")
+        let id = UUID()
+        store.update(terminalId: id, title: "Real")
+        store.update(terminalId: id, title: "   \n")
+        XCTAssertEqual(store.title(for: id), "Real")
+    }
+
+    func testClearRemovesValue() {
+        let store = TerminalSessionTitleStore(persistenceKey: "test-\(UUID())")
+        let id = UUID()
+        store.update(terminalId: id, title: "X")
+        store.clear(terminalId: id)
+        XCTAssertNil(store.title(for: id))
+    }
+
+    func testClearMultipleRemovesAll() {
+        let store = TerminalSessionTitleStore(persistenceKey: "test-\(UUID())")
+        let a = UUID(); let b = UUID(); let c = UUID()
+        store.update(terminalId: a, title: "A")
+        store.update(terminalId: b, title: "B")
+        store.update(terminalId: c, title: "C")
+        store.clear(terminalIds: [a, c])
+        XCTAssertNil(store.title(for: a))
+        XCTAssertEqual(store.title(for: b), "B")
+        XCTAssertNil(store.title(for: c))
+    }
+
+    func testPersistenceRoundtrip() {
+        let key = "test-\(UUID())"
+        let id = UUID()
+        let store = TerminalSessionTitleStore(persistenceKey: key)
+        store.update(terminalId: id, title: "Persisted")
+        store.flushSaveForTesting()
+
+        let store2 = TerminalSessionTitleStore(persistenceKey: key)
+        XCTAssertEqual(store2.title(for: id), "Persisted")
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+}
