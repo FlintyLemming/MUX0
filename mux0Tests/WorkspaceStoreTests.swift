@@ -212,14 +212,19 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.workspaces[0].tabs[0].title, original)
     }
 
-    func testRenameTab_sameNameIsNoop() {
+    func testRenameTab_sameNameStillLocksUserRenamed() {
+        // Renaming a tab to its current title still counts as an explicit
+        // user commit on the rename UI — title field stays the same, but
+        // userRenamed flips to true so the auto-naming pipeline backs off.
         let store = WorkspaceStore(persistenceKey: "test-\(UUID())")
         store.createWorkspace(name: "ws")
         let wsId = store.workspaces[0].id
         let tabId = store.workspaces[0].tabs[0].id
         let original = store.workspaces[0].tabs[0].title
+        XCTAssertFalse(store.workspaces[0].tabs[0].userRenamed)
         store.renameTab(id: tabId, in: wsId, to: original)
         XCTAssertEqual(store.workspaces[0].tabs[0].title, original)
+        XCTAssertTrue(store.workspaces[0].tabs[0].userRenamed)
     }
 
     // MARK: - Move tab
