@@ -801,3 +801,68 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(tab.quickActionId, "claude")
     }
 }
+
+// MARK: - Rename lock + session title store cleanup
+
+final class WorkspaceStoreRenameLockTests: XCTestCase {
+
+    private func makeStore() -> WorkspaceStore {
+        let store = WorkspaceStore(persistenceKey: "test-\(UUID())")
+        store.createWorkspace(name: "ws")
+        return store
+    }
+
+    func testRenameTabSetsUserRenamedTrue() {
+        let ws = makeStore()
+        let wsId = ws.workspaces[0].id
+        let (tabId, _) = ws.addTab(to: wsId)!
+        ws.renameTab(id: tabId, in: wsId, to: "My Custom Name")
+        let tab = ws.workspaces[0].tabs.first { $0.id == tabId }!
+        XCTAssertEqual(tab.title, "My Custom Name")
+        XCTAssertTrue(tab.userRenamed)
+    }
+
+    func testResetTabToAutoTitleClearsLock() {
+        let ws = makeStore()
+        let wsId = ws.workspaces[0].id
+        let (tabId, _) = ws.addTab(to: wsId)!
+        ws.renameTab(id: tabId, in: wsId, to: "Locked")
+        ws.resetTabToAutoTitle(tabId: tabId, in: wsId)
+        let tab = ws.workspaces[0].tabs.first { $0.id == tabId }!
+        XCTAssertFalse(tab.userRenamed)
+        // title field unchanged — fallback path will continue to show it
+        // until next hook emit overrides via the store.
+        XCTAssertEqual(tab.title, "Locked")
+    }
+
+    func testCloseTerminalClearsSessionTitleStore() {
+        let ws = makeStore()
+        let titleStore = TerminalSessionTitleStore(persistenceKey: "test-\(UUID())")
+        ws.sessionTitleStore = titleStore
+        let wsId = ws.workspaces[0].id
+        let (tabId, termId) = ws.addTab(to: wsId)!
+        // Split so close doesn't auto-remove the tab.
+        let newTermId = ws.splitTerminal(id: termId, in: wsId, tabId: tabId,
+                                         direction: .vertical)!
+        titleStore.update(terminalId: termId, title: "Left")
+        titleStore.update(terminalId: newTermId, title: "Right")
+        ws.closeTerminal(id: termId, in: wsId, tabId: tabId)
+        XCTAssertNil(titleStore.title(for: termId))
+        XCTAssertEqual(titleStore.title(for: newTermId), "Right")
+    }
+
+    func testRemoveTabClearsAllItsTerminalsInStore() {
+        let ws = makeStore()
+        let titleStore = TerminalSessionTitleStore(persistenceKey: "test-\(UUID())")
+        ws.sessionTitleStore = titleStore
+        let wsId = ws.workspaces[0].id
+        let (tabId, termId) = ws.addTab(to: wsId)!
+        let split2 = ws.splitTerminal(id: termId, in: wsId, tabId: tabId,
+                                       direction: .horizontal)!
+        titleStore.update(terminalId: termId, title: "A")
+        titleStore.update(terminalId: split2, title: "B")
+        ws.removeTab(id: tabId, from: wsId)
+        XCTAssertNil(titleStore.title(for: termId))
+        XCTAssertNil(titleStore.title(for: split2))
+    }
+}
