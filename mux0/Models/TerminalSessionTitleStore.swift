@@ -53,6 +53,7 @@ final class TerminalSessionTitleStore {
     // MARK: - Persistence
 
     #if DEBUG
+    /// Immediately flush any pending debounced save. Used only in tests.
     func flushSaveForTesting() {
         saveWorkItem?.cancel()
         saveWorkItem = nil

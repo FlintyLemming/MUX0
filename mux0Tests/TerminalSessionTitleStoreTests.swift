@@ -62,4 +62,15 @@ final class TerminalSessionTitleStoreTests: XCTestCase {
         XCTAssertEqual(store2.title(for: id), "Persisted")
         UserDefaults.standard.removeObject(forKey: key)
     }
+
+    func testUpdateSameValueIsIdempotent() {
+        // Equality guard exists to avoid spurious debounced writes when an
+        // agent hook fires the same title repeatedly (e.g. one per turn).
+        let key = "test-\(UUID())"
+        let id = UUID()
+        let store = TerminalSessionTitleStore(persistenceKey: key)
+        store.update(terminalId: id, title: "Stable")
+        store.update(terminalId: id, title: "Stable")
+        XCTAssertEqual(store.title(for: id), "Stable")
+    }
 }
