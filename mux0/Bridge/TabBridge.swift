@@ -23,6 +23,7 @@ struct TabBridge: NSViewRepresentable {
     func makeNSView(context: Context) -> TabContentView {
         let view = TabContentView(frame: .zero)
         view.store = store
+        view.statusStore = statusStore
         view.pwdStore = pwdStore
         view.settingsStore = settings
         view.quickActionsStore = quickActionsStore
@@ -38,6 +39,7 @@ struct TabBridge: NSViewRepresentable {
     func updateNSView(_ nsView: TabContentView, context: Context) {
         _ = languageTick
         nsView.store = store
+        nsView.statusStore = statusStore
         nsView.pwdStore = pwdStore
         nsView.settingsStore = settings
         nsView.quickActionsStore = quickActionsStore
