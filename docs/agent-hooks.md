@@ -16,11 +16,11 @@ mux0 通过注入到各 AI CLI 的生命周期钩子，把 `running` / `idle` / 
 
 | Agent | 来源 | 时机 |
 |-------|------|------|
-| Claude | transcript JSONL 内 `custom-title`（`/rename` 写入）优先；fallback 到 `ai-title`（LLM 异步生成） | `prompt` / `stop` |
+| Claude | `custom-title`（`/rename`）→ `ai-title`（LLM 异步生成）→ 第一条真实 user prompt（截断）| `prompt` / `stop` |
 | Codex | `~/.codex/state_*.sqlite`（取最新 schema 版本）的 `threads.title WHERE id = <session_id>` | `prompt` / `stop` |
 | OpenCode | plugin `input.session?.title` | `chat.message` / `tool.execute.before` |
 
-LLM 自动生成的 title 在新建 session 后第一次 emit 时可能为空字符串，下一个 turn 会填上。Swift 端 `TerminalSessionTitleStore.update` 丢弃空字符串，避免覆盖已知值。`/rename` 写入的 Claude `custom-title` 是即时的，永远优先于稍后由 LLM 写出的 `ai-title`。
+Claude 的三段回退顺序与 `claude --resume` picker 显示逻辑一致：用户 `/rename` 永远优先；LLM 在短对话（`hi` / `你好` 这类）下不生成 `ai-title`，所以 fallback 到第一条非 slash-command 的 user prompt（截断），让 tab 在新建短会话时也能有合理标题。OpenCode `session.title` 是 LLM 异步生成的——新建 session 第一次 emit 时可能为空字符串，下一个 turn 会填上。Swift 端 `TerminalSessionTitleStore.update` 丢弃空字符串，避免覆盖已知值。
 
 用户在 mux0 内 inline rename tab 后，`TerminalTab.userRenamed = true`，`displayTitle` 锁定不再吃 `sessionTitle`。右键菜单「Reset to auto title」清除锁定。
 

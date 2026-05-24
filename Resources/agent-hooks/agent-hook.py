@@ -110,17 +110,39 @@ def read_transcript_summary(path: str) -> str:
     return ""
 
 
+def _extract_user_text(d: dict) -> str:
+    """Pull plain-text content out of a transcript user row, skipping slash
+    commands like `<command-name>/rename</command-name>` so the fallback
+    title reflects real conversation rather than a meta-command."""
+    msg = d.get("message", {})
+    content = msg.get("content", "") if isinstance(msg, dict) else ""
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                content = block.get("text", "")
+                break
+    if not isinstance(content, str):
+        return ""
+    text = content.strip()
+    if not text or text.startswith("<command-") or text.startswith("<local-command-"):
+        return ""
+    return " ".join(text.split())
+
+
 def read_ai_title(path: str) -> str:
     """Read Claude's session title from the transcript JSONL.
 
-    Claude persists two kinds of title rows:
-      - `{"type":"custom-title","customTitle":"..."}` — written by `/rename`
-        when the user explicitly names the session. User intent wins.
-      - `{"type":"ai-title","aiTitle":"..."}` — written asynchronously by
-        the LLM once a session has enough context. Fallback.
+    Priority (claude's `/resume` picker uses the same order):
+      1. `{"type":"custom-title","customTitle":"..."}` — written by `/rename`,
+         user intent.
+      2. `{"type":"ai-title","aiTitle":"..."}` — async LLM output. Claude
+         only generates these once the session has enough content; short
+         exchanges like "hi"/"hello" never trigger it.
+      3. First real user prompt (truncated). Mirrors Codex's `first_user_message`
+         fallback so short Claude sessions still get a sensible tab name
+         before the LLM-derived title is available.
 
-    We single-pass forward-scan and remember the latest of each kind, then
-    return custom-title if any exists, otherwise ai-title. Truncated to
+    Single forward pass keeps the latest of each kind. Truncated to
     SUMMARY_MAXLEN. Empty string on any error.
     """
     if not path:
@@ -132,6 +154,7 @@ def read_ai_title(path: str) -> str:
         return ""
     custom = ""
     ai = ""
+    first_prompt = ""
     for line in lines:
         try:
             d = json.loads(line)
@@ -148,7 +171,11 @@ def read_ai_title(path: str) -> str:
             val = d.get("aiTitle") or ""
             if isinstance(val, str) and val:
                 ai = val
-    chosen = custom or ai
+        elif t == "user" and not first_prompt and not d.get("isMeta"):
+            text = _extract_user_text(d)
+            if text:
+                first_prompt = text
+    chosen = custom or ai or first_prompt
     return chosen[:SUMMARY_MAXLEN]
 
 

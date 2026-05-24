@@ -413,6 +413,71 @@ def test_read_ai_title_picks_latest_custom_title(tmp_path):
     assert agent_hook.read_ai_title(str(p)) == "second"
 
 
+def test_read_ai_title_falls_back_to_first_user_prompt(tmp_path):
+    # Short sessions never get an ai-title; we still want a useful tab name.
+    p = tmp_path / "t.jsonl"
+    p.write_text(
+        json.dumps({"type": "user", "message": {"content": "How do I sort an array in Swift?"}}) + "\n" +
+        json.dumps({"type": "assistant", "message": {"content": "..."}}) + "\n"
+    )
+    assert agent_hook.read_ai_title(str(p)) == "How do I sort an array in Swift?"
+
+
+def test_read_ai_title_first_prompt_skips_slash_commands(tmp_path):
+    # /clear and /rename rows are recorded as user rows with <command-...> content.
+    # They must not be picked up as the "first prompt".
+    p = tmp_path / "t.jsonl"
+    p.write_text(
+        json.dumps({"type": "user", "message": {"content": "<command-name>/clear</command-name>"}}) + "\n" +
+        json.dumps({"type": "user", "message": {"content": "real question"}}) + "\n"
+    )
+    assert agent_hook.read_ai_title(str(p)) == "real question"
+
+
+def test_read_ai_title_first_prompt_skips_meta(tmp_path):
+    # isMeta=true rows are e.g. hook context injections, not user input.
+    p = tmp_path / "t.jsonl"
+    p.write_text(
+        json.dumps({"type": "user", "isMeta": True, "message": {"content": "meta payload"}}) + "\n" +
+        json.dumps({"type": "user", "message": {"content": "first real"}}) + "\n"
+    )
+    assert agent_hook.read_ai_title(str(p)) == "first real"
+
+
+def test_read_ai_title_first_prompt_extracts_text_from_list_content(tmp_path):
+    # Claude sometimes stores content as [{type: text, text: ...}, ...].
+    p = tmp_path / "t.jsonl"
+    p.write_text(
+        json.dumps({
+            "type": "user",
+            "message": {"content": [
+                {"type": "text", "text": "list-form content"},
+                {"type": "image"},
+            ]},
+        }) + "\n"
+    )
+    assert agent_hook.read_ai_title(str(p)) == "list-form content"
+
+
+def test_read_ai_title_custom_beats_first_prompt(tmp_path):
+    # Even if a user prompt exists first, custom-title must still win.
+    p = tmp_path / "t.jsonl"
+    p.write_text(
+        json.dumps({"type": "user", "message": {"content": "real question"}}) + "\n" +
+        json.dumps({"type": "custom-title", "customTitle": "my name"}) + "\n"
+    )
+    assert agent_hook.read_ai_title(str(p)) == "my name"
+
+
+def test_read_ai_title_ai_beats_first_prompt(tmp_path):
+    p = tmp_path / "t.jsonl"
+    p.write_text(
+        json.dumps({"type": "user", "message": {"content": "first prompt"}}) + "\n" +
+        json.dumps({"type": "ai-title", "aiTitle": "LLM derived"}) + "\n"
+    )
+    assert agent_hook.read_ai_title(str(p)) == "LLM derived"
+
+
 # ---------- read_codex_title ----------
 
 def test_read_codex_title_reads_from_db(tmp_path, monkeypatch):
