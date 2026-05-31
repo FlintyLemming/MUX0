@@ -83,7 +83,7 @@ GhosttyBridge.shared.readPalette()     // → ghostty_config_palette_s?
 | `write_clipboard_cb` | 写入 NSPasteboard |
 | `read_clipboard_cb` | 目前 no-op，v1 不实现剪贴板读取 |
 | `close_surface_cb` | surface 请求关闭时通知 canvas |
-| `action_cb` | ghostty 内部 action 分发（CONFIG_CHANGE / CELL_SIZE / SCROLLBAR / PWD / OPEN_URL / MOUSE_SHAPE）|
+| `action_cb` | ghostty 内部 action 分发（CONFIG_CHANGE / CELL_SIZE / SCROLLBAR / PWD / OPEN_URL / MOUSE_SHAPE / MOUSE_OVER_LINK）|
 
 ### 链接交互相关 action
 
@@ -97,7 +97,14 @@ GhosttyBridge.shared.readPalette()     // → ghostty_config_palette_s?
   与 `cursorUpdate(with:)` override。
 - 下划线高亮由 ghostty 渲染器自绘，依赖 `GhosttyTerminalView.mouseMoved` 把带修饰键的
   hover 位置转发给 `ghostty_surface_mouse_pos`（仅焦点 pane）。
-  `GHOSTTY_ACTION_MOUSE_OVER_LINK` 未接入（YAGNI）。
+- `GHOSTTY_ACTION_MOUSE_OVER_LINK` — hover 命中/离开链接时通知 URL；用于驱动
+  `LinkHintTooltip` 提示气泡与链接光标（经 `GhosttyTerminalView.applyHoveredLink`
+  → `updateLinkAffordance`）。
+- 普通 hover（不按 Cmd）也要下划线/提示：`mouseMoved` 转发时注入 `GHOSTTY_MODS_SUPER`
+  伪造 Cmd，使 ghostty 在无修饰键时也高亮链接并发 MOUSE_OVER_LINK；点击事件传真实修饰键
+  （`mouseDown` 在按钮前先用真实 mods 发一次 mouse_pos 清掉伪造态），故仅真·Cmd+单击打开。
+  光标与 tooltip 由 `updateLinkAffordance` 按真实 Cmd 状态接管；`applyMouseShape` 在
+  hover 链接期间让位；`mouseExited`/失焦时清理 tooltip。
 
 ## 升级 ghostty 版本
 
