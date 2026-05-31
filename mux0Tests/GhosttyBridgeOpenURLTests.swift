@@ -12,6 +12,16 @@ final class GhosttyBridgeOpenURLTests: XCTestCase {
     func testAllowsMailtoAndFile() {
         XCTAssertEqual(GhosttyBridge.resolveOpenURL("mailto:x@y.com")?.scheme, "mailto")
         XCTAssertEqual(GhosttyBridge.resolveOpenURL("file:///tmp/a.txt")?.scheme, "file")
+        XCTAssertEqual(GhosttyBridge.resolveOpenURL("file:///tmp/a.txt")?.absoluteString, "file:///tmp/a.txt")
+    }
+
+    func testRejectsEmptyFileURL() {
+        XCTAssertNil(GhosttyBridge.resolveOpenURL("file://"))
+    }
+
+    func testTrimsSurroundingWhitespace() {
+        XCTAssertEqual(GhosttyBridge.resolveOpenURL("  https://example.com  ")?.absoluteString,
+                       "https://example.com")
     }
 
     func testRejectsDisallowedSchemes() {

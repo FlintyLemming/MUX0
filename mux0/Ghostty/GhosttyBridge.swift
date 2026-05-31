@@ -397,12 +397,15 @@ final class GhosttyBridge {
     /// 终端链接 Cmd+点击时由 ghostty 传来的原始 URL 字符串。仅放行安全 scheme，
     /// 过滤掉终端输出里可能注入的自定义 scheme（如 javascript:）。
     static func resolveOpenURL(_ raw: String) -> URL? {
+        let allowed: Set<String> = ["http", "https", "mailto", "file"]
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
               let url = URL(string: trimmed),
               let scheme = url.scheme?.lowercased(),
-              ["http", "https", "mailto", "file"].contains(scheme)
+              allowed.contains(scheme)
         else { return nil }
+        // file:// with no path is valid syntax but useless to open.
+        if scheme == "file", url.path.isEmpty { return nil }
         return url
     }
 
