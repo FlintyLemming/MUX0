@@ -410,7 +410,8 @@ final class GhosttyBridge {
             switch shape {
             case GHOSTTY_MOUSE_SHAPE_POINTER: cursor = .pointingHand
             case GHOSTTY_MOUSE_SHAPE_TEXT:    cursor = .iBeam
-            default:                          cursor = .arrow
+            // 未映射的 shape 在终端里回退到 iBeam（而非 arrow），更贴近文本区预期。
+            default:                          cursor = .iBeam
             }
             DispatchQueue.main.async {
                 guard let view = GhosttyTerminalView.view(forSurface: surface) else { return }
