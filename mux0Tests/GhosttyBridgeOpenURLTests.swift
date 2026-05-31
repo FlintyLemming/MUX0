@@ -1,0 +1,33 @@
+import XCTest
+@testable import mux0
+
+final class GhosttyBridgeOpenURLTests: XCTestCase {
+    func testAllowsHTTPAndHTTPS() {
+        XCTAssertEqual(GhosttyBridge.resolveOpenURL("http://example.com")?.absoluteString,
+                       "http://example.com")
+        XCTAssertEqual(GhosttyBridge.resolveOpenURL("https://example.com/a?b=1")?.absoluteString,
+                       "https://example.com/a?b=1")
+    }
+
+    func testAllowsMailtoAndFile() {
+        XCTAssertEqual(GhosttyBridge.resolveOpenURL("mailto:x@y.com")?.scheme, "mailto")
+        XCTAssertEqual(GhosttyBridge.resolveOpenURL("file:///tmp/a.txt")?.scheme, "file")
+    }
+
+    func testRejectsDisallowedSchemes() {
+        XCTAssertNil(GhosttyBridge.resolveOpenURL("javascript:alert(1)"))
+        XCTAssertNil(GhosttyBridge.resolveOpenURL("ftp://example.com"))
+        XCTAssertNil(GhosttyBridge.resolveOpenURL("custom-scheme://do-something"))
+    }
+
+    func testRejectsEmptyAndSchemeless() {
+        XCTAssertNil(GhosttyBridge.resolveOpenURL(""))
+        XCTAssertNil(GhosttyBridge.resolveOpenURL("   "))
+        XCTAssertNil(GhosttyBridge.resolveOpenURL("example.com"))
+    }
+
+    func testSchemeMatchIsCaseInsensitive() {
+        XCTAssertEqual(GhosttyBridge.resolveOpenURL("HTTPS://example.com")?.scheme?.lowercased(),
+                       "https")
+    }
+}

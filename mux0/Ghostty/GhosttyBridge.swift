@@ -394,6 +394,18 @@ final class GhosttyBridge {
         }
     }
 
+    /// 终端链接 Cmd+点击时由 ghostty 传来的原始 URL 字符串。仅放行安全 scheme，
+    /// 过滤掉终端输出里可能注入的自定义 scheme（如 javascript:）。
+    static func resolveOpenURL(_ raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https", "mailto", "file"].contains(scheme)
+        else { return nil }
+        return url
+    }
+
     /// ghostty forwards OSC 7 payloads as-is. zsh integration emits
     /// `kitty-shell-cwd://HOST/path` and `file://HOST/path` is the classic form;
     /// strip the scheme+host so we end up with a plain filesystem path usable by
