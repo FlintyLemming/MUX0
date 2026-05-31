@@ -389,6 +389,18 @@ final class GhosttyBridge {
                 GhosttyBridge.shared.onPwdChanged?(terminalId, pwd)
             }
             return true
+        case GHOSTTY_ACTION_OPEN_URL:
+            let ou = action.action.open_url
+            guard let ptr = ou.url else { return true }
+            // url 不保证 NUL 结尾，按 len 取字节构造 String。
+            let data = Data(bytes: UnsafeRawPointer(ptr), count: Int(ou.len))
+            guard let raw = String(data: data, encoding: .utf8) else { return true }
+            DispatchQueue.main.async {
+                if let url = GhosttyBridge.resolveOpenURL(raw) {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            return true
         default:
             return false
         }
