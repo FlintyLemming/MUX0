@@ -65,6 +65,9 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
     /// Last scrollbar state from ghostty, or nil if never reported.
     private(set) var scrollbarState: ScrollbarState?
 
+    /// 由 ghostty 的 MOUSE_SHAPE action 驱动。默认 iBeam，与终端文本区一致。
+    private var currentCursor: NSCursor = .iBeam
+
     /// Cell dimensions in points (already converted from backing px). Reported by
     /// ghostty's CELL_SIZE action when font/scale changes. Zero until first update.
     private(set) var cellSize: CGSize = .zero
@@ -83,6 +86,18 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
         guard scrollbarState != s else { return }
         scrollbarState = s
         NotificationCenter.default.post(name: Self.scrollbarDidChangeNotification, object: self)
+    }
+
+    /// ghostty 通知鼠标应显示的形状（悬停链接→手型，文本→iBeam）。
+    func applyMouseShape(_ cursor: NSCursor) {
+        currentCursor = cursor
+        // 若鼠标正悬在自身上，立即生效，不必等下一次 cursorUpdate。
+        if let window = window, window.isKeyWindow {
+            let pt = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+            if bounds.contains(pt) {
+                cursor.set()
+            }
+        }
     }
 
     /// Apply a new cell size in **backing pixels**. Converts to points using this
@@ -252,7 +267,7 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
         // 只在自己是 first responder 时接收 mouseMoved，
         // 防止非聚焦 terminal 也收到鼠标位置更新（导致下层假性选区）。
         let options: NSTrackingArea.Options = [
-            .activeWhenFirstResponder, .mouseMoved, .inVisibleRect
+            .activeWhenFirstResponder, .mouseMoved, .cursorUpdate, .inVisibleRect
         ]
         addTrackingArea(NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil))
     }
@@ -681,6 +696,10 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
             GHOSTTY_MOUSE_MIDDLE,
             modsFromEvent(event)
         )
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        currentCursor.set()
     }
 
     override func mouseMoved(with event: NSEvent) {

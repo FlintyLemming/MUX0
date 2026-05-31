@@ -401,6 +401,22 @@ final class GhosttyBridge {
                 }
             }
             return true
+        case GHOSTTY_ACTION_MOUSE_SHAPE:
+            guard target.tag == GHOSTTY_TARGET_SURFACE,
+                  let surface = target.target.surface
+            else { return true }
+            let shape = action.action.mouse_shape
+            let cursor: NSCursor
+            switch shape {
+            case GHOSTTY_MOUSE_SHAPE_POINTER: cursor = .pointingHand
+            case GHOSTTY_MOUSE_SHAPE_TEXT:    cursor = .iBeam
+            default:                          cursor = .arrow
+            }
+            DispatchQueue.main.async {
+                guard let view = GhosttyTerminalView.view(forSurface: surface) else { return }
+                view.applyMouseShape(cursor)
+            }
+            return true
         default:
             return false
         }
