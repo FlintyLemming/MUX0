@@ -118,25 +118,15 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
     }
 
     /// 当前真实修饰键（不含注入的 SUPER），用于撤销 ghostty 对非真链接的高亮。
-    private func currentRealMods() -> ghostty_input_mods_e {
-        var raw: ghostty_input_mods_e.RawValue = 0
-        let flags = NSEvent.modifierFlags
-        if flags.contains(.shift)   { raw |= GHOSTTY_MODS_SHIFT.rawValue }
-        if flags.contains(.control) { raw |= GHOSTTY_MODS_CTRL.rawValue }
-        if flags.contains(.option)  { raw |= GHOSTTY_MODS_ALT.rawValue }
-        if flags.contains(.command) { raw |= GHOSTTY_MODS_SUPER.rawValue }
-        return ghostty_input_mods_e(rawValue: raw)
-    }
-
-    /// ghostty 高亮了一个我们不认可的「链接」（OSC8 路径/命令等）。用真实修饰键重发
-    /// 当前鼠标位置，让 ghostty 重新判定并撤掉那条下划线。
+    /// ghostty 高亮了一个我们不认可的「链接」（OSC8 路径/命令等）。OSC8 链接的 hover
+    /// 高亮不看修饰键（且 ghostty 会去重同一格的 mouse_pos），单纯重发修饰键无法取消；
+    /// 用「鼠标移出」信号 (-1,-1) 强制 ghostty 清掉任何 hover 高亮。下一次 mouseMoved
+    /// 会重新进入，所以只是把噪音高亮抹掉，不影响后续真链接。
     private func cancelGhosttyLinkHighlight() {
         guard let s = surface, let window = window, window.isKeyWindow else { return }
-        let winPt = window.mouseLocationOutsideOfEventStream
-        let viewPt = convert(winPt, from: nil)
+        let viewPt = convert(window.mouseLocationOutsideOfEventStream, from: nil)
         guard bounds.contains(viewPt) else { return }
-        let flipped = flippedPoint(winPt)
-        ghostty_surface_mouse_pos(s, flipped.x, flipped.y, currentRealMods())
+        ghostty_surface_mouse_pos(s, -1, -1, ghostty_input_mods_e(rawValue: 0))
     }
 
     /// ghostty 通知 hover 命中/离开链接。只认可真能打开的 web 链接；其余（点不开的
@@ -145,7 +135,10 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
         if let url, GhosttyTerminalView.isHoverHighlightURL(url) {
             hoveredLinkURL = url
         } else {
-            if url != nil { cancelGhosttyLinkHighlight() }
+            // 仅普通 hover（未按 Cmd）时抹掉噪音高亮；按住 Cmd 是用户主动找链接，交给 ghostty。
+            if url != nil, !NSEvent.modifierFlags.contains(.command) {
+                cancelGhosttyLinkHighlight()
+            }
             hoveredLinkURL = nil
         }
         updateLinkAffordance()
