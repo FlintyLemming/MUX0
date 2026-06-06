@@ -2261,6 +2261,13 @@
           }
         }
       }
+    },
+    "terminal.link.openHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "⌘ + click to open link" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "⌘ + 单击打开链接" } }
+      }
     }
   },
   "version": "1.0"

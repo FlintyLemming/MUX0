@@ -65,6 +65,13 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
     /// Last scrollbar state from ghostty, or nil if never reported.
     private(set) var scrollbarState: ScrollbarState?
 
+    /// 由 ghostty 的 MOUSE_SHAPE action 驱动。默认 iBeam，与终端文本区一致。
+    private var currentCursor: NSCursor = .iBeam
+
+    /// 当前 hover 命中的链接 URL（来自 ghostty MOUSE_OVER_LINK）；nil 表示未在链接上。
+    private var hoveredLinkURL: String?
+    private let linkTooltip = LinkHintTooltip()
+
     /// Cell dimensions in points (already converted from backing px). Reported by
     /// ghostty's CELL_SIZE action when font/scale changes. Zero until first update.
     private(set) var cellSize: CGSize = .zero
@@ -83,6 +90,79 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
         guard scrollbarState != s else { return }
         scrollbarState = s
         NotificationCenter.default.post(name: Self.scrollbarDidChangeNotification, object: self)
+    }
+
+    /// ghostty 通知鼠标应显示的形状（悬停链接→手型，文本→iBeam）。
+    func applyMouseShape(_ cursor: NSCursor) {
+        // 链接 hover 期间光标由 updateLinkAffordance 接管，避免与注入产生的 POINTER 打架。
+        guard hoveredLinkURL == nil else { return }
+        currentCursor = cursor
+        // 若鼠标正悬在自身上，立即生效，不必等下一次 cursorUpdate。
+        if let window = window, window.isKeyWindow {
+            let pt = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+            if bounds.contains(pt) {
+                cursor.set()
+            }
+        }
+    }
+
+    /// hover 下划线/tooltip 只认可这些真能打开的 web 链接。故意排除 file://（那正是
+    /// shell 提示符路径之类的噪音来源）与无 scheme 的 OSC8 伪链接（如 /clear）。
+    /// Cmd+点击打开仍由 GhosttyBridge.resolveOpenURL 决定，范围不受此影响。
+    static func isHoverHighlightURL(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased() else { return false }
+        return ["http", "https", "mailto"].contains(scheme)
+    }
+
+    /// 当前真实修饰键（不含注入的 SUPER），用于撤销 ghostty 对非真链接的高亮。
+    /// ghostty 高亮了一个我们不认可的「链接」（OSC8 路径/命令等）。OSC8 链接的 hover
+    /// 高亮不看修饰键（且 ghostty 会去重同一格的 mouse_pos），单纯重发修饰键无法取消；
+    /// 用「鼠标移出」信号 (-1,-1) 强制 ghostty 清掉任何 hover 高亮。下一次 mouseMoved
+    /// 会重新进入，所以只是把噪音高亮抹掉，不影响后续真链接。
+    private func cancelGhosttyLinkHighlight() {
+        guard let s = surface, let window = window, window.isKeyWindow else { return }
+        let viewPt = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard bounds.contains(viewPt) else { return }
+        ghostty_surface_mouse_pos(s, -1, -1, ghostty_input_mods_e(rawValue: 0))
+    }
+
+    /// ghostty 通知 hover 命中/离开链接。只认可真能打开的 web 链接；其余（点不开的
+    /// OSC8 路径/命令）撤掉 ghostty 的高亮，不显示任何 hover 反馈。
+    func applyHoveredLink(_ url: String?) {
+        if let url, GhosttyTerminalView.isHoverHighlightURL(url) {
+            hoveredLinkURL = url
+        } else {
+            // 仅普通 hover（未按 Cmd）时抹掉噪音高亮；按住 Cmd 是用户主动找链接，交给 ghostty。
+            if url != nil, !NSEvent.modifierFlags.contains(.command) {
+                cancelGhosttyLinkHighlight()
+            }
+            hoveredLinkURL = nil
+        }
+        updateLinkAffordance()
+    }
+
+    /// 根据「是否在链接上」与「真实 Cmd 是否按下」集中决定光标与 tooltip。
+    /// 普通 hover 链接：iBeam + 显示提示；Cmd+hover 链接：手型 + 隐藏提示。
+    private func updateLinkAffordance() {
+        let cmdHeld = NSEvent.modifierFlags.contains(.command)
+        if hoveredLinkURL != nil {
+            currentCursor = cmdHeld ? .pointingHand : .iBeam
+            if cmdHeld {
+                linkTooltip.hide()
+            } else {
+                linkTooltip.show(L10n.string("terminal.link.openHint"), at: NSEvent.mouseLocation)
+            }
+        } else {
+            currentCursor = .iBeam
+            linkTooltip.hide()
+        }
+        if let window = window, window.isKeyWindow {
+            let pt = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+            if bounds.contains(pt) { currentCursor.set() }
+        }
     }
 
     /// Apply a new cell size in **backing pixels**. Converts to points using this
@@ -252,7 +332,7 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
         // 只在自己是 first responder 时接收 mouseMoved，
         // 防止非聚焦 terminal 也收到鼠标位置更新（导致下层假性选区）。
         let options: NSTrackingArea.Options = [
-            .activeWhenFirstResponder, .mouseMoved, .inVisibleRect
+            .activeWhenFirstResponder, .mouseMoved, .cursorUpdate, .mouseEnteredAndExited, .inVisibleRect
         ]
         addTrackingArea(NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil))
     }
@@ -450,6 +530,8 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
     }
 
     override func resignFirstResponder() -> Bool {
+        // 失焦时清掉链接 hover 提示，避免 tooltip 滞留。
+        if hoveredLinkURL != nil { applyHoveredLink(nil) }
         if let s = surface {
             // 防御性释放：清掉任何可能残留的按键/拖拽选区状态，
             // 避免下次再聚焦时出现"鼠标一动就在选"的假象。
@@ -683,10 +765,36 @@ final class GhosttyTerminalView: NSView, NSTextInputClient {
         )
     }
 
+    override func cursorUpdate(with event: NSEvent) {
+        currentCursor.set()
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        super.flagsChanged(with: event)
+        // Cmd 的按下/松开会切换链接光标与 tooltip（即便鼠标没动）。
+        updateLinkAffordance()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        // 鼠标移出 view 时清掉链接 hover 状态，否则浮层 tooltip 会一直留在屏幕上。
+        if hoveredLinkURL != nil { applyHoveredLink(nil) }
+    }
+
     override func mouseMoved(with event: NSEvent) {
-        // 故意不转发 hover 位置：mux0 是多窗口浮动布局，
-        // ghostty 内部对未匹配 PRESS 的 mouse_pos 推进可能引发"鼠标飘到哪里就在哪里画选区"的假象。
-        // hover 仅用于 link 高亮等次要特性，宁可放弃也不要在底层 terminal 上误触发选中。
+        // 转发 hover 位置以驱动 ghostty 的链接下划线高亮与光标形状。
+        // 安全性：tracking area 为 .activeWhenFirstResponder，仅焦点 pane 触发；
+        // 再加 isCursorOverSelf 守卫。纯 hover（无按键）不会扩选区，后台 pane 的
+        // mouseLocation 轮询问题已被现有 frontmost gate 拦住。
+        guard isCursorOverSelf(event) else { return }
+        guard let s = surface else { return }
+        let pt = flippedPoint(event.locationInWindow)
+        // 注入 SUPER：让 ghostty 在普通 hover 也判定链接可高亮，从而画下划线并发
+        // MOUSE_OVER_LINK。点击事件（mouseDown）仍传真实修饰键，且按下按钮前会先用真实
+        // mods 发一次 mouse_pos 清掉这里的伪造状态，故只有真·Cmd+单击才会打开链接。
+        var raw = modsFromEvent(event).rawValue
+        raw |= GHOSTTY_MODS_SUPER.rawValue
+        ghostty_surface_mouse_pos(s, pt.x, pt.y, ghostty_input_mods_e(rawValue: raw))
     }
 
     override func mouseDragged(with event: NSEvent) {

@@ -389,9 +389,69 @@ final class GhosttyBridge {
                 GhosttyBridge.shared.onPwdChanged?(terminalId, pwd)
             }
             return true
+        case GHOSTTY_ACTION_OPEN_URL:
+            let ou = action.action.open_url
+            guard let ptr = ou.url else { return true }
+            // url 不保证 NUL 结尾，按 len 取字节构造 String。
+            let data = Data(bytes: UnsafeRawPointer(ptr), count: Int(ou.len))
+            guard let raw = String(data: data, encoding: .utf8) else { return true }
+            DispatchQueue.main.async {
+                if let url = GhosttyBridge.resolveOpenURL(raw) {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            return true
+        case GHOSTTY_ACTION_MOUSE_SHAPE:
+            guard target.tag == GHOSTTY_TARGET_SURFACE,
+                  let surface = target.target.surface
+            else { return true }
+            let shape = action.action.mouse_shape
+            let cursor: NSCursor
+            switch shape {
+            case GHOSTTY_MOUSE_SHAPE_POINTER: cursor = .pointingHand
+            case GHOSTTY_MOUSE_SHAPE_TEXT:    cursor = .iBeam
+            // 未映射的 shape 在终端里回退到 iBeam（而非 arrow），更贴近文本区预期。
+            default:                          cursor = .iBeam
+            }
+            DispatchQueue.main.async {
+                guard let view = GhosttyTerminalView.view(forSurface: surface) else { return }
+                view.applyMouseShape(cursor)
+            }
+            return true
+        case GHOSTTY_ACTION_MOUSE_OVER_LINK:
+            guard target.tag == GHOSTTY_TARGET_SURFACE,
+                  let surface = target.target.surface
+            else { return true }
+            let mol = action.action.mouse_over_link
+            let url: String?
+            if let ptr = mol.url, mol.len > 0 {
+                url = String(data: Data(bytes: UnsafeRawPointer(ptr), count: Int(mol.len)), encoding: .utf8)
+            } else {
+                url = nil
+            }
+            DispatchQueue.main.async {
+                guard let view = GhosttyTerminalView.view(forSurface: surface) else { return }
+                view.applyHoveredLink(url)
+            }
+            return true
         default:
             return false
         }
+    }
+
+    /// 终端链接 Cmd+点击时由 ghostty 传来的原始 URL 字符串。仅放行安全 scheme，
+    /// 过滤掉终端输出里可能注入的自定义 scheme（如 javascript:）。
+    static func resolveOpenURL(_ raw: String) -> URL? {
+        let allowed: Set<String> = ["http", "https", "mailto", "file"]
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              allowed.contains(scheme)
+        else { return nil }
+        // file:// with no path is valid syntax but useless to open.
+        if scheme == "file", url.path.isEmpty { return nil }
+        return url
     }
 
     /// ghostty forwards OSC 7 payloads as-is. zsh integration emits
