@@ -41,20 +41,20 @@ struct ContentView: View {
     /// IconButton 固定边长（见 IconButton）。
     private let iconButtonSize: CGFloat = 22
     /// 折叠态品牌 + 齿轮簇的容器宽度（右对齐用，给定一个够宽的盒子，品牌串变长只向左伸）。
-    private let collapsedBrandClusterWidth: CGFloat = 120
-    /// 展开态「新建 workspace」+ 的 leading：放在侧边栏左侧（traffic light 右侧），
-    /// 与 toggle 分居两端，这样 toggle 在折叠/展开间位置不变。可按 traffic light 实宽微调。
-    private let sidebarAddLeading: CGFloat = 84
+    private let collapsedBrandClusterWidth: CGFloat = 100
     /// 顶部控件（toggle / 品牌 / 齿轮 / 新建）顶部内距：让 22pt 控件与上移后的 tab 栏
     /// pill 垂直居中。pill 中心 = cardInset(top) + tab 栏内缩(xs) + 高度/2。
     private var headerControlsTop: CGFloat {
         cardInset + DT.Space.xs + (TabBarView.height - iconButtonSize) / 2
     }
-    /// toggle 的 leading：固定在最右（紧贴 tab 栏左缘），折叠/展开都不动。toggle 右缘
-    /// = sidebarWidth，tab 栏左缘 window-x = sidebarWidth + xs
-    /// （见 TabContentView.tabStripLeadingWindowX），故 leading = sidebarWidth - 按钮宽。
+    /// toggle 的 leading：中心对齐 sidebar 图标列（= sidebarWidth - 25，与 footer 齿轮 /
+    /// 行状态点同轴），折叠/展开都固定不动，右侧与 tab 栏保持 ~18pt 间距。
     private var toggleLeading: CGFloat {
-        DT.Layout.sidebarWidth - iconButtonSize
+        DT.Layout.sidebarWidth - 25 - iconButtonSize / 2
+    }
+    /// 展开态「新建 workspace」+ 的 leading：紧贴 toggle 左侧（折叠时随侧边栏一起消失）。
+    private var addWorkspaceLeading: CGFloat {
+        toggleLeading - iconButtonSize - DT.Space.xs
     }
 
     /// Master UI gate for the sidebar + tab bar status icons. True iff the user
@@ -161,7 +161,7 @@ struct ContentView: View {
 
             if !sidebarCollapsed {
                 addWorkspaceButton
-                    .padding(.leading, sidebarAddLeading)
+                    .padding(.leading, addWorkspaceLeading)
                     .padding(.top, headerControlsTop)
                     .transition(.opacity)
             }
@@ -205,6 +205,8 @@ struct ContentView: View {
             if isFirstCapture {
                 isFullScreen = window.styleMask.contains(.fullScreen)
             }
+            // 让红绿灯竖直中心对齐顶部控件/tab 栏那一排（macOS 全屏进出会复位，故每次 configure 重应用）。
+            alignTrafficLights(in: window)
         }
         // 让整窗 NSAppearance 跟随 ghostty 主题亮度。SwiftUI 里的 LabeledContent
         // label、TextField 背景、Slider/Stepper/Picker 默认控件都依赖 NSAppearance
@@ -354,6 +356,29 @@ struct ContentView: View {
         themeManager.applyWindowEffects(opacity: opacity, blurRadius: blur, contentOpacity: content, contentShadow: shadow)
     }
 
+    /// 把红绿灯整体下移，使其竖直中心与顶部控件/tab 栏（headerControlsTop 那一排）对齐。
+    /// macOS 标题栏只有 ~28pt：放得下就精确对齐到目标中心，放不下则夹到标题栏内尽量靠下
+    /// （避免裁切）。每次 window configure 重应用，覆盖 macOS 在全屏进出后的复位。
+    private func alignTrafficLights(in window: NSWindow) {
+        let targetCenterFromTop = headerControlsTop + iconButtonSize / 2
+        let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        for type in types {
+            guard let button = window.standardWindowButton(type),
+                  let titlebar = button.superview else { continue }
+            let h = titlebar.bounds.height
+            // 仅当 superview 确是标题栏（矮）时调整，避免误把整窗 frame view 当标题栏。
+            guard h > 0, h < 100 else { continue }
+            let bh = button.bounds.height
+            // 标题栏非翻转坐标（y 自底向上）：按钮中心距顶 = target → origin.y =
+            // h - target - bh/2，夹到 [0, h-bh] 不越界裁切。
+            let raw = h - targetCenterFromTop - bh / 2
+            let clamped = max(0, min(h - bh, raw))
+            if abs(button.frame.origin.y - clamped) > 0.5 {
+                button.setFrameOrigin(NSPoint(x: button.frame.origin.x, y: clamped))
+            }
+        }
+    }
+
     private var sidebarToggleButton: some View {
         IconButton(
             theme: themeManager.theme,
@@ -395,15 +420,10 @@ struct ContentView: View {
                 userInfo: ["section": "update"]
             )
         } label: {
-            HStack(spacing: DT.Space.xs) {
-                Text(L10n.Sidebar.title)
-                    .font(Font(DT.Font.smallB))
-                    .foregroundColor(Color(themeManager.theme.textPrimary))
-                Text("v\(updateStore.currentVersion)")
-                    .font(Font(DT.Font.small))
-                    .foregroundColor(Color(themeManager.theme.textSecondary))
-            }
-            .contentShape(Rectangle())
+            Text(L10n.Sidebar.title)
+                .font(Font(DT.Font.smallB))
+                .foregroundColor(Color(themeManager.theme.textPrimary))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(String(localized: L10n.Sidebar.checkForUpdates.withLocale(locale)))

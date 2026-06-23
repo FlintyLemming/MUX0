@@ -12,6 +12,28 @@ private final class NonDraggableHostingView<Content: View>: NSHostingView<Conten
     override var mouseDownCanMoveWindow: Bool { false }
 }
 
+/// NSClipView 子类，点击不拖窗——窗口拖拽区是「所有 mouseDownCanMoveWindow=true
+/// 视图区域的并集」，pill 下方的 clip/scroll/container 视图若仍可拖，pill 所在区域
+/// 照样落进拖拽区，于是点 tab 变成拖窗。整条链路都要置为不可拖。
+private final class NonDraggableClipView: NSClipView {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
+/// NSScrollView 子类，点击不拖窗，并用 NonDraggableClipView 作为内容视图。
+private final class NonDraggableScrollView: NSScrollView {
+    override var mouseDownCanMoveWindow: Bool { false }
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        contentView = NonDraggableClipView()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+/// NSImageView 子类，点击不拖窗——pill 上的图标也压在标题栏拖拽区里。
+private final class NonDraggableImageView: NSImageView {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
 // MARK: - TabBarView
 
 /// Horizontal tab strip. Notifies via callbacks; never touches the store directly.
@@ -66,11 +88,14 @@ final class TabBarView: NSView {
     /// tracks the user's in-app language choice rather than Locale.current.
     var locale: Locale = .current
 
-    private let stripContainer = NSView()
-    private let scrollView = NSScrollView()
-    private let tabsContainer = NSView()
+    private let stripContainer = NonDraggableView()
+    private let scrollView = NonDraggableScrollView()
+    private let tabsContainer = NonDraggableView()
     private var addHost: NSHostingView<AnyView>!
     private static let addHostSize: CGFloat = 22
+
+    /// 整条 tab 栏都不参与窗口拖拽（连同上面的容器/滚动视图链）——见各子类说明。
+    override var mouseDownCanMoveWindow: Bool { false }
 
     // Drag preview 状态：让 tabs 在拖拽中实时重排到 "若此刻松手会变成的顺序"。
     /// 当前被拖的 tab id（由 pasteboard 在 draggingEntered 时读出）。
@@ -107,12 +132,12 @@ final class TabBarView: NSView {
         super.layout()
         let hPad = Self.pillInset
         let addW: CGFloat = 28
-        // 圆角条背景铺满整个 tab 栏宽度——让 "+" 落在条内、与 tab 同处一块容器，
-        // 而非悬在右侧 canvas 上显得脱节。pill 滚动区占左侧，"+" 占右侧 addW。
-        stripContainer.frame = NSRect(x: 0, y: 0, width: bounds.width, height: bounds.height)
+        // 圆角条只盖 pill 区，"+" 留在条外侧（右 addW 内），与之前一致。
+        let stripW = max(0, bounds.width - addW)
+        stripContainer.frame = NSRect(x: 0, y: 0, width: stripW, height: bounds.height)
         stripContainer.layer?.cornerRadius = Self.stripRadius
         scrollView.frame = NSRect(x: hPad, y: 0,
-                                  width: max(0, bounds.width - addW - hPad), height: bounds.height)
+                                  width: max(0, stripW - hPad * 2), height: bounds.height)
         let hostSize = Self.addHostSize
         addHost.frame = NSRect(
             x: bounds.width - addW + (addW - hostSize) / 2,
@@ -497,7 +522,7 @@ private final class TabItemView: NSView, NSTextFieldDelegate, NSDraggingSource {
     }
 
     private let pillView   = NonDraggableView()
-    private let kindIcon   = NSImageView()
+    private let kindIcon   = NonDraggableImageView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let renameField = NSTextField()
     private let statusIcon = TerminalStatusIconView(frame: .zero)

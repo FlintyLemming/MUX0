@@ -13,6 +13,9 @@ final class TerminalStatusIconView: NSView {
 
     private let shapeLayer = CAShapeLayer()
 
+    /// 该图标随 tab pill 一起处于顶部标题栏拖拽区——点击不应拖窗（见 TabBarView 同名说明）。
+    override var mouseDownCanMoveWindow: Bool { false }
+
     override init(frame: NSRect) {
         super.init(frame: NSRect(x: 0, y: 0, width: Self.size, height: Self.size))
         setup()
