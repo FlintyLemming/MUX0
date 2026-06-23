@@ -98,6 +98,9 @@ final class TabContentView: NSView {
         tabBar.onAddTab = { [weak self] in
             self?.addNewTab()
         }
+        tabBar.onAddQuickActionTab = { [weak self] id in
+            self?.addQuickActionTab(id: id)
+        }
         tabBar.onCloseTab = { [weak self] tabId in
             self?.confirmCloseTab(tabId)
         }
@@ -121,15 +124,36 @@ final class TabContentView: NSView {
         installKeyMonitor()
     }
 
+    /// Constant window-space x for the tab strip's left edge: the expanded
+    /// sidebar's right edge + the standard inset. The strip anchors here in both
+    /// states — when expanded it lines up with the content card's left; when the
+    /// sidebar collapses, *this view* slides left while the strip stays put, so
+    /// the freed top-left space takes the brand / settings / toggle controls
+    /// without the tabs lurching. Since both endpoints map the strip to the same
+    /// window x, the transition has no horizontal jump.
+    private static let tabStripLeadingWindowX: CGFloat = DT.Layout.sidebarWidth + DT.Space.xs
+
     override func layout() {
         super.layout()
         let inset = DT.Space.xs
         let gap = DT.Space.xs
         let tbH = TabBarView.height
         let contentW = max(0, bounds.width - inset * 2)
+
+        // Tab strip: keep a constant window-x left edge (see tabStripLeadingWindowX).
+        // Before the view is in a window, fall back to the plain inset.
+        let stripLeft: CGFloat
+        if window != nil {
+            let originXWindow = convert(NSPoint.zero, to: nil).x
+            stripLeft = max(inset, Self.tabStripLeadingWindowX - originXWindow)
+        } else {
+            stripLeft = inset
+        }
+        let stripW = max(0, bounds.width - inset - stripLeft)
         tabBar.frame = NSRect(
-            x: inset, y: bounds.height - tbH - inset,
-            width: contentW, height: tbH)
+            x: stripLeft, y: bounds.height - tbH - inset,
+            width: stripW, height: tbH)
+
         let paneH = max(0, bounds.height - tbH - inset * 2 - gap)
         paneContainer.frame = NSRect(x: inset, y: inset, width: contentW, height: paneH)
         // Pane's autoresizingMask keeps it filling paneContainer on layout passes.
@@ -430,6 +454,20 @@ final class TabContentView: NSView {
         guard let result = store?.addTab(to: wsId) else { return }
         if let sourceId {
             pwdStore?.inherit(from: sourceId, to: result.terminalId)
+        }
+        reloadFromStore()
+    }
+
+    /// Create a Quick Action tab from the "+" dropdown. Mirrors the old top-bar
+    /// quick-action button: resolve the display title, add the tab via the
+    /// store, and inherit the source pane's pwd so the action launches in the
+    /// cwd the user was looking at.
+    private func addQuickActionTab(id: QuickActionId) {
+        guard let wsId = store?.selectedId else { return }
+        let title = quickActionsStore?.displayName(for: id, locale: tabBar.locale) ?? id
+        guard let result = store?.addQuickActionTab(id: id, title: title, in: wsId) else { return }
+        if let prev = result.sourcePwdTerminalId {
+            pwdStore?.inherit(from: prev, to: result.terminalId)
         }
         reloadFromStore()
     }

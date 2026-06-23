@@ -1769,6 +1769,23 @@
         }
       }
     },
+    "tab.add.terminal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终端"
+          }
+        }
+      }
+    },
     "tab.close.alert.cancel": {
       "extractionState": "manual",
       "localizations": {

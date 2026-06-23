@@ -75,6 +75,8 @@ enum L10n {
 
     enum Tab {
         static let newTabTooltip        = LocalizedStringResource("tab.newTab")
+        /// 「＋」下拉菜单第一项：普通新终端 tab。
+        static let addTerminal          = LocalizedStringResource("tab.add.terminal")
         // Row rename/close/resetAutoTitle (context menu) and close-tab alert
         // strings are resolved at runtime via L10n.string("tab.row.rename")
         // etc. — they live only in AppKit call sites (NSMenuItem, NSAlert), so

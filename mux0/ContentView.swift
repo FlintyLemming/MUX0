@@ -42,6 +42,22 @@ struct ContentView: View {
     /// 容器起点 = (sidebarWidth - 25) - 11 - (按钮宽 22 + xs 间距 4) = sidebarWidth - 62。
     /// 这样 toggle 相对原位置向左挪了一格，"+"接管原 toggle 的图标列轴线。
     private let headerControlsLeading: CGFloat = DT.Layout.sidebarWidth - 25 - 11 - (22 + DT.Space.xs)
+    /// 内容卡片顶部内距。顶部 28pt 空白带撤掉后，tab 栏上移到这里，与顶部控件同排。
+    private let contentTopInset: CGFloat = DT.Space.xs
+    /// IconButton 固定边长（见 IconButton）。
+    private let iconButtonSize: CGFloat = 22
+    /// 折叠态品牌 + 齿轮簇的容器宽度（右对齐用，给定一个够宽的盒子，品牌串变长只向左伸）。
+    private let collapsedBrandClusterWidth: CGFloat = 120
+    /// 顶部控件（toggle / 品牌 / 齿轮）顶部内距：让 22pt 控件与上移后的 tab 栏 pill 垂直居中。
+    /// pill 中心 = contentTopInset + tab 栏内缩(xs) + 高度/2。
+    private var headerControlsTop: CGFloat {
+        contentTopInset + DT.Space.xs + (TabBarView.height - iconButtonSize) / 2
+    }
+    /// 折叠态 toggle 的 leading：右缘紧贴 tab 栏左缘（留 xs 间隙）。tab 栏左缘 window-x
+    /// = sidebarWidth + xs（见 TabContentView.tabStripLeadingWindowX）。
+    private var collapsedToggleLeading: CGFloat {
+        DT.Layout.sidebarWidth - iconButtonSize
+    }
 
     /// Master UI gate for the sidebar + tab bar status icons. True iff the user
     /// has enabled at least one agent in Settings → Agents; false collapses the
@@ -131,25 +147,36 @@ struct ContentView: View {
                     x: 0,
                     y: 2
                 )
-                .padding(.top, trafficLightInset)
+                .padding(.top, contentTopInset)
                 .padding(.leading, sidebarCollapsed ? cardInset : 0)
                 .padding(.trailing, cardInset)
                 .padding(.bottom, cardInset)
             }
 
-            HStack(spacing: DT.Space.xs) {
-                sidebarToggleButton
-                if !sidebarCollapsed {
-                    addWorkspaceButton
-                }
-            }
-            .padding(.leading, headerControlsLeading)
-            .padding(.top, DT.Space.xs)
+            // 顶部控件：toggle 常驻，随折叠状态在 leading 之间滑动。展开时其右侧是
+            // 「新建 workspace」+；折叠时其左侧渐显品牌名 + 设置齿轮（从 sidebar footer
+            // 上移），右对齐到 toggle 左缘，品牌串变长只向左伸、不会顶到 toggle / tab 栏。
+            sidebarToggleButton
+                .padding(.leading, sidebarCollapsed ? collapsedToggleLeading : headerControlsLeading)
+                .padding(.top, headerControlsTop)
 
-            quickActionsBar
-                .frame(maxWidth: .infinity, alignment: .topTrailing)
-                .padding(.trailing, cardInset + DT.Space.xs)
-                .padding(.top, DT.Space.xs)
+            if !sidebarCollapsed {
+                addWorkspaceButton
+                    .padding(.leading, headerControlsLeading + iconButtonSize + DT.Space.xs)
+                    .padding(.top, headerControlsTop)
+                    .transition(.opacity)
+            }
+
+            if sidebarCollapsed {
+                HStack(spacing: DT.Space.xs) {
+                    collapsedBrandButton
+                    collapsedSettingsButton
+                }
+                .frame(width: collapsedBrandClusterWidth, alignment: .trailing)
+                .padding(.leading, (collapsedToggleLeading - DT.Space.xs) - collapsedBrandClusterWidth)
+                .padding(.top, headerControlsTop)
+                .transition(.opacity)
+            }
         }
         .frame(minWidth: 960, minHeight: 620)
         // 根背景用 sidebar 色作为窗口底色 —— sidebar 区不再额外叠一层，整个
@@ -359,36 +386,54 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private var quickActionsBar: some View {
-        let displayList = quickActionsStore.displayList
-        if !displayList.isEmpty {
+    /// 折叠态顶部品牌按钮（从 sidebar footer 上移）：点击跳 Settings → Update。
+    /// 有更新时右上角叠红点，复刻 footer 的更新提示。
+    private var collapsedBrandButton: some View {
+        Button {
+            NotificationCenter.default.post(
+                name: .mux0OpenSettings,
+                object: nil,
+                userInfo: ["section": "update"]
+            )
+        } label: {
             HStack(spacing: DT.Space.xs) {
-                ForEach(displayList, id: \.self) { id in
-                    quickActionButton(id: id)
-                }
+                Text(L10n.Sidebar.title)
+                    .font(Font(DT.Font.smallB))
+                    .foregroundColor(Color(themeManager.theme.textPrimary))
+                Text("v\(updateStore.currentVersion)")
+                    .font(Font(DT.Font.small))
+                    .foregroundColor(Color(themeManager.theme.textSecondary))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(String(localized: L10n.Sidebar.checkForUpdates.withLocale(locale)))
+        .onHover { inside in
+            if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+        .overlay(alignment: .topTrailing) {
+            if updateStore.hasUpdate {
+                Circle()
+                    .fill(Color(themeManager.theme.danger))
+                    .frame(width: 6, height: 6)
+                    .offset(x: 5, y: -1)
+                    .help(String(localized: L10n.Sidebar.updateAvailable.withLocale(locale)))
             }
         }
     }
 
-    private func quickActionButton(id: QuickActionId) -> some View {
-        let tooltip = quickActionsStore.displayName(for: id, locale: locale)
-        let icon = quickActionsStore.iconSource(for: id)
-        return IconButton(theme: themeManager.theme, help: tooltip) {
-            guard let wsId = store.selectedId,
-                  let result = store.addQuickActionTab(id: id, title: tooltip, in: wsId)
-            else { return }
-            if let prev = result.sourcePwdTerminalId {
-                pwdStore.inherit(from: prev, to: result.terminalId)
-            }
+    /// 折叠态顶部设置齿轮（从 sidebar footer 上移）。
+    private var collapsedSettingsButton: some View {
+        IconButton(
+            theme: themeManager.theme,
+            help: String(localized: L10n.Sidebar.settingsTooltip.withLocale(locale))
+        ) {
+            NotificationCenter.default.post(name: .mux0OpenSettings, object: nil)
         } label: {
-            QuickActionIconView(
-                source: icon,
-                size: 13,
-                color: Color(themeManager.theme.textSecondary)
-            )
+            Image(systemName: "gearshape")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundColor(Color(themeManager.theme.textSecondary))
         }
-        .disabled(store.selectedId == nil)
     }
 }
 

@@ -146,6 +146,7 @@ final class L10nSmokeTests: XCTestCase {
         "sidebar.title",
         "sidebar.updateAvailable",
         // Tab
+        "tab.add.terminal",
         "tab.close.alert.cancel",
         "tab.close.alert.confirm",
         "tab.close.alert.message %@",

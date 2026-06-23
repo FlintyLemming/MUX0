@@ -7,6 +7,9 @@ import SwiftUI
 final class TabBarView: NSView {
     var onSelectTab: ((UUID) -> Void)?
     var onAddTab: (() -> Void)?
+    /// Invoked when a Quick Action item is chosen in the "+" dropdown. Carries
+    /// the QuickActionId; TabContentView turns it into a new quick-action tab.
+    var onAddQuickActionTab: ((QuickActionId) -> Void)?
     var onCloseTab: ((UUID) -> Void)?
     var onRenameTab: ((UUID, String) -> Void)?
     /// (fromIndex, toIndex) 采用 insertion-index 语义（0…count），
@@ -270,7 +273,7 @@ final class TabBarView: NSView {
         let currentLocale = locale
         return AnyView(
             IconButton(theme: currentTheme, help: String(localized: L10n.Tab.newTabTooltip.withLocale(currentLocale)), action: { [weak self] in
-                self?.onAddTab?()
+                self?.showAddMenu()
             }) {
                 Image(systemName: "plus")
                     .font(.system(size: 13, weight: .regular))
@@ -278,6 +281,109 @@ final class TabBarView: NSView {
             }
             .environment(\.locale, currentLocale)
         )
+    }
+
+    // MARK: - Add menu ("+")
+
+    private static let menuIconSize: CGFloat = 14
+
+    /// Build and pop up the "+" dropdown: "Terminal" (plain new tab) followed
+    /// by the enabled Quick Actions. Anchored on the current click event so it
+    /// drops from the "+" button, matching the tab right-click menu mechanism.
+    private func showAddMenu() {
+        let menu = buildAddMenu()
+        if let event = NSApp.currentEvent {
+            NSMenu.popUpContextMenu(menu, with: event, for: addHost)
+        } else {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -DT.Space.xs), in: addHost)
+        }
+    }
+
+    private func buildAddMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let termItem = NSMenuItem(
+            title: String(localized: L10n.Tab.addTerminal.withLocale(locale)),
+            action: #selector(addTerminalMenuTapped), keyEquivalent: "")
+        termItem.target = self
+        let termImage = NSImage(systemSymbolName: "terminal", accessibilityDescription: nil)
+        termImage?.size = NSSize(width: Self.menuIconSize, height: Self.menuIconSize)
+        termItem.image = termImage
+        menu.addItem(termItem)
+
+        let actions = quickActionsStore?.displayList ?? []
+        if !actions.isEmpty {
+            menu.addItem(.separator())
+            for id in actions {
+                let item = NSMenuItem(
+                    title: quickActionsStore?.displayName(for: id, locale: locale) ?? id,
+                    action: #selector(quickActionMenuTapped(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = id
+                item.image = menuIcon(for: id)
+                menu.addItem(item)
+            }
+        }
+        return menu
+    }
+
+    @objc private func addTerminalMenuTapped() { onAddTab?() }
+
+    @objc private func quickActionMenuTapped(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? QuickActionId else { return }
+        onAddQuickActionTab?(id)
+    }
+
+    /// NSImage for a Quick Action menu item — mirrors the tab-pill icon sources
+    /// (SF Symbol / asset / letter) at menu icon size. Template images tint with
+    /// the menu text color automatically.
+    private func menuIcon(for id: QuickActionId) -> NSImage? {
+        guard let source = quickActionsStore?.iconSource(for: id) else { return nil }
+        let s = Self.menuIconSize
+        switch source {
+        case .sfSymbol(let name):
+            let img = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+            img?.size = NSSize(width: s, height: s)
+            return img
+        case .asset(let name):
+            guard let raw = NSImage(named: name) else { return nil }
+            let img = NSImage(size: NSSize(width: s, height: s))
+            img.lockFocus()
+            raw.draw(in: NSRect(x: 0, y: 0, width: s, height: s))
+            img.unlockFocus()
+            img.isTemplate = raw.isTemplate
+            return img
+        case .letter(let c):
+            return Self.letterMenuImage(String(c), size: s)
+        }
+    }
+
+    /// Letter glyph for custom Quick Actions without an icon. Matches the tab
+    /// pill's rounded-semibold letter, minus the circle outline (clutter at
+    /// menu size). Template so it tints with the menu text color.
+    private static func letterMenuImage(_ string: String, size: CGFloat) -> NSImage {
+        let canvas = NSSize(width: size, height: size)
+        let image = NSImage(size: canvas)
+        image.lockFocus()
+        let baseFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        let font: NSFont = {
+            if let desc = baseFont.fontDescriptor.withDesign(.rounded),
+               let rounded = NSFont(descriptor: desc, size: 11) { return rounded }
+            return baseFont
+        }()
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: style,
+        ]
+        let attr = NSAttributedString(string: string, attributes: attrs)
+        let ts = attr.size()
+        attr.draw(in: NSRect(x: 0, y: (canvas.height - ts.height) / 2,
+                             width: canvas.width, height: ts.height))
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
     }
 
     // MARK: - Drag & drop
