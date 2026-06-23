@@ -35,27 +35,25 @@ struct ContentView: View {
     }
 
     private let trafficLightInset: CGFloat = 28
-    private let cardInset: CGFloat = 8
+    /// 内容卡片四边统一内距（top / leading / trailing / bottom 一致）。
+    private let cardInset: CGFloat = DT.Space.xs
     private let cardRadius: CGFloat = DT.Radius.card
-    /// 顶部一对按钮（toggle 在左、"+"" 在右）容器 leading：
-    /// 让"+"按钮中心仍与 sidebar row 状态图标列对齐 = sidebarWidth - 25；
-    /// 容器起点 = (sidebarWidth - 25) - 11 - (按钮宽 22 + xs 间距 4) = sidebarWidth - 62。
-    /// 这样 toggle 相对原位置向左挪了一格，"+"接管原 toggle 的图标列轴线。
-    private let headerControlsLeading: CGFloat = DT.Layout.sidebarWidth - 25 - 11 - (22 + DT.Space.xs)
-    /// 内容卡片顶部内距。顶部 28pt 空白带撤掉后，tab 栏上移到这里，与顶部控件同排。
-    private let contentTopInset: CGFloat = DT.Space.xs
     /// IconButton 固定边长（见 IconButton）。
     private let iconButtonSize: CGFloat = 22
     /// 折叠态品牌 + 齿轮簇的容器宽度（右对齐用，给定一个够宽的盒子，品牌串变长只向左伸）。
     private let collapsedBrandClusterWidth: CGFloat = 120
-    /// 顶部控件（toggle / 品牌 / 齿轮）顶部内距：让 22pt 控件与上移后的 tab 栏 pill 垂直居中。
-    /// pill 中心 = contentTopInset + tab 栏内缩(xs) + 高度/2。
+    /// 展开态「新建 workspace」+ 的 leading：放在侧边栏左侧（traffic light 右侧），
+    /// 与 toggle 分居两端，这样 toggle 在折叠/展开间位置不变。可按 traffic light 实宽微调。
+    private let sidebarAddLeading: CGFloat = 84
+    /// 顶部控件（toggle / 品牌 / 齿轮 / 新建）顶部内距：让 22pt 控件与上移后的 tab 栏
+    /// pill 垂直居中。pill 中心 = cardInset(top) + tab 栏内缩(xs) + 高度/2。
     private var headerControlsTop: CGFloat {
-        contentTopInset + DT.Space.xs + (TabBarView.height - iconButtonSize) / 2
+        cardInset + DT.Space.xs + (TabBarView.height - iconButtonSize) / 2
     }
-    /// 折叠态 toggle 的 leading：右缘紧贴 tab 栏左缘（留 xs 间隙）。tab 栏左缘 window-x
-    /// = sidebarWidth + xs（见 TabContentView.tabStripLeadingWindowX）。
-    private var collapsedToggleLeading: CGFloat {
+    /// toggle 的 leading：固定在最右（紧贴 tab 栏左缘），折叠/展开都不动。toggle 右缘
+    /// = sidebarWidth，tab 栏左缘 window-x = sidebarWidth + xs
+    /// （见 TabContentView.tabStripLeadingWindowX），故 leading = sidebarWidth - 按钮宽。
+    private var toggleLeading: CGFloat {
         DT.Layout.sidebarWidth - iconButtonSize
     }
 
@@ -147,22 +145,23 @@ struct ContentView: View {
                     x: 0,
                     y: 2
                 )
-                .padding(.top, contentTopInset)
+                .padding(.top, cardInset)
                 .padding(.leading, sidebarCollapsed ? cardInset : 0)
                 .padding(.trailing, cardInset)
                 .padding(.bottom, cardInset)
             }
 
-            // 顶部控件：toggle 常驻，随折叠状态在 leading 之间滑动。展开时其右侧是
-            // 「新建 workspace」+；折叠时其左侧渐显品牌名 + 设置齿轮（从 sidebar footer
+            // 顶部控件。toggle 固定在最右（紧贴 tab 栏左缘），折叠/展开都不动——
+            // 这样切换侧边栏时它不会跳。展开时「新建 workspace」+ 在侧边栏左侧（与
+            // toggle 分居两端）；折叠时其左侧渐显品牌名 + 设置齿轮（从 sidebar footer
             // 上移），右对齐到 toggle 左缘，品牌串变长只向左伸、不会顶到 toggle / tab 栏。
             sidebarToggleButton
-                .padding(.leading, sidebarCollapsed ? collapsedToggleLeading : headerControlsLeading)
+                .padding(.leading, toggleLeading)
                 .padding(.top, headerControlsTop)
 
             if !sidebarCollapsed {
                 addWorkspaceButton
-                    .padding(.leading, headerControlsLeading + iconButtonSize + DT.Space.xs)
+                    .padding(.leading, sidebarAddLeading)
                     .padding(.top, headerControlsTop)
                     .transition(.opacity)
             }
@@ -173,7 +172,7 @@ struct ContentView: View {
                     collapsedSettingsButton
                 }
                 .frame(width: collapsedBrandClusterWidth, alignment: .trailing)
-                .padding(.leading, (collapsedToggleLeading - DT.Space.xs) - collapsedBrandClusterWidth)
+                .padding(.leading, (toggleLeading - DT.Space.xs) - collapsedBrandClusterWidth)
                 .padding(.top, headerControlsTop)
                 .transition(.opacity)
             }

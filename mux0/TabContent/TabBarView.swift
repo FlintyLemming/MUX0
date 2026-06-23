@@ -1,6 +1,17 @@
 import AppKit
 import SwiftUI
 
+/// NSView 子类，点击不触发窗口拖动。tab 栏上移进顶部标题栏拖拽区后，透明 NSView
+/// 默认 `mouseDownCanMoveWindow=true`，点击会被 titlebar 拖窗行为吞掉而不触发选中。
+private final class NonDraggableView: NSView {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
+/// 同理，承载 "+" 按钮的 NSHostingView 子类——让它在标题栏区内可点击而非拖窗。
+private final class NonDraggableHostingView<Content: View>: NSHostingView<Content> {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
 // MARK: - TabBarView
 
 /// Horizontal tab strip. Notifies via callbacks; never touches the store directly.
@@ -87,7 +98,7 @@ final class TabBarView: NSView {
         scrollView.autoresizingMask = []
         stripContainer.addSubview(scrollView)
 
-        addHost = NSHostingView(rootView: makeAddButton())
+        addHost = NonDraggableHostingView(rootView: makeAddButton())
         addSubview(addHost)
         registerForDraggedTypes([.mux0Tab])
     }
@@ -96,11 +107,12 @@ final class TabBarView: NSView {
         super.layout()
         let hPad = Self.pillInset
         let addW: CGFloat = 28
-        let stripW = max(0, bounds.width - addW)
-        stripContainer.frame = NSRect(x: 0, y: 0, width: stripW, height: bounds.height)
+        // 圆角条背景铺满整个 tab 栏宽度——让 "+" 落在条内、与 tab 同处一块容器，
+        // 而非悬在右侧 canvas 上显得脱节。pill 滚动区占左侧，"+" 占右侧 addW。
+        stripContainer.frame = NSRect(x: 0, y: 0, width: bounds.width, height: bounds.height)
         stripContainer.layer?.cornerRadius = Self.stripRadius
         scrollView.frame = NSRect(x: hPad, y: 0,
-                                  width: max(0, stripW - hPad * 2), height: bounds.height)
+                                  width: max(0, bounds.width - addW - hPad), height: bounds.height)
         let hostSize = Self.addHostSize
         addHost.frame = NSRect(
             x: bounds.width - addW + (addW - hostSize) / 2,
@@ -484,7 +496,7 @@ private final class TabItemView: NSView, NSTextFieldDelegate, NSDraggingSource {
         }
     }
 
-    private let pillView   = NSView()
+    private let pillView   = NonDraggableView()
     private let kindIcon   = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let renameField = NSTextField()
@@ -620,6 +632,17 @@ private final class TabItemView: NSView, NSTextFieldDelegate, NSDraggingSource {
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// 顶部标题栏拖拽区内，点击不拖窗——让 mouseDown 真正落到选中/拖拽逻辑上。
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    /// 非重命名态：pill 内任意点击都归 TabItemView 自己处理（选中 / 拖拽重排），
+    /// 避免命中透明子视图（pillView / titleLabel / kindIcon）后落到 titlebar 拖窗区。
+    /// 重命名态放行，让 renameField 正常接管编辑点击。
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard !isRenaming else { return super.hitTest(point) }
+        return super.hitTest(point) != nil ? self : nil
+    }
 
     override func resetCursorRects() {
         // Rename 模式下让 NSTextField 用默认 I-beam 光标
