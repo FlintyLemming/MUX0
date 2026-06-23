@@ -158,6 +158,10 @@ struct ContentView: View {
             // (re-)install or tear down the macOS blur layer driven by the current
             // `background-blur-radius` config value.
             GhosttyBridge.shared.applyWindowBackgroundBlur(to: window)
+            // 首次拿到 window 时用其真实全屏状态兜底初始化：macOS 状态恢复可能
+            // 在启动时直接把窗口还原为全屏，而此时不会发 willEnterFullScreen 通知，
+            // 不兜底就会在全屏黑底上叠半透明层显出偏灰。只生效一次，之后交给通知。
+            themeManager.syncInitialFullScreen(window.styleMask.contains(.fullScreen))
         }
         // 让整窗 NSAppearance 跟随 ghostty 主题亮度。SwiftUI 里的 LabeledContent
         // label、TextField 背景、Slider/Stepper/Picker 默认控件都依赖 NSAppearance

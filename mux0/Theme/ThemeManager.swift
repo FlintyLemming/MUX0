@@ -49,6 +49,9 @@ final class ThemeManager {
     /// 导致偏灰偏暗。全屏强制所有 opacity 为 1.0 以保持色彩准确。
     private(set) var isFullScreen: Bool = false
 
+    /// 是否已用窗口真实状态做过一次性的初始全屏同步。见 `syncInitialFullScreen`。
+    @ObservationIgnored private var didSyncInitialFullScreen = false
+
     init() {
         // 初始化时直接尝试解析 ghostty config (不需要 libghostty)
         let isDark = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -115,6 +118,17 @@ final class ThemeManager {
     func setFullScreen(_ fullScreen: Bool) {
         if isFullScreen == fullScreen { return }
         isFullScreen = fullScreen
+    }
+
+    /// 首次拿到 NSWindow 时由 ContentView 调用，用窗口真实的全屏状态初始化
+    /// `isFullScreen`。macOS 状态恢复可能在启动时直接把窗口恢复为全屏，此时
+    /// 不会触发 `willEnterFullScreenNotification`，若不在此兜底，半透明层会叠在
+    /// 全屏纯黑背景上偏灰。只在首次生效；后续全屏切换仍交给 `setFullScreen` +
+    /// 通知路径，以保留刻意设计的进/退场时序（进场 willEnter、退场 didExit）。
+    func syncInitialFullScreen(_ fullScreen: Bool) {
+        if didSyncInitialFullScreen { return }
+        didSyncInitialFullScreen = true
+        setFullScreen(fullScreen)
     }
 
     /// 推入最新的 window effects。clamp 后只在值真的变化时赋值，避免无谓的
