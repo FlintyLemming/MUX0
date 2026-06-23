@@ -38,10 +38,12 @@ enum GhosttyConfigReader {
     /// 用户在 config 里直接写的 background/foreground/palette 优先于 theme；
     /// mux0 override 优先于 ghostty 标准 config。
     /// - Parameter systemIsDark: Whether the system (or user preference) is
-    ///   currently dark mode. Passed explicitly so the caller controls the source
-    ///   of truth — `NSApp.effectiveAppearance` may be stale when read inside an
-    ///   `AppleInterfaceThemeChangedNotification` handler.
-    static func load(systemIsDark: Bool = false) -> Colors {
+    ///   currently dark mode. Required (no default) so the caller always owns the
+    ///   source of truth — `NSApp.effectiveAppearance` may be stale when read
+    ///   inside an `AppleInterfaceThemeChangedNotification` handler, and a default
+    ///   would silently resolve the wrong side for any future caller that forgets
+    ///   to pass it.
+    static func load(systemIsDark: Bool) -> Colors {
         var theme = Colors()
         var direct = Colors()
 
@@ -81,7 +83,9 @@ enum GhosttyConfigReader {
     ///
     /// `isDark` 由调用方显式传入，而非内部读取 `NSApp.effectiveAppearance`，
     /// 因为后者在 `AppleInterfaceThemeChangedNotification` 回调中可能仍为旧值。
-    private static func resolveThemeNameForAppearance(_ raw: String, isDark: Bool) -> String {
+    ///
+    /// internal（非 private）以便单测直接覆盖各分支。
+    static func resolveThemeNameForAppearance(_ raw: String, isDark: Bool) -> String {
         guard raw.contains(":") && raw.contains(",") else { return raw }
         let wantPrefix = isDark ? "dark:" : "light:"
         for part in raw.split(separator: ",") {
@@ -141,17 +145,18 @@ enum GhosttyConfigReader {
     ///
     /// 来源优先级：mux0 override > ghostty 标准 config。这样在设置 UI 里改主题后，
     /// 下一次 reloadConfig 能立即加载正确的主题文件，而不是把旧主题焊在 config 上。
-    /// - Parameter isDark: Whether dark mode is active. Falls back to
-    ///   `NSApp.effectiveAppearance` when nil (for call sites that are NOT
-    ///   inside an `AppleInterfaceThemeChangedNotification` handler).
-    static func resolvedThemePath(isDark: Bool? = nil) -> String? {
+    ///
+    /// 仅由 `GhosttyBridge.buildConfig()` 调用，而 buildConfig 只在 `reloadConfig()`
+    /// 链路（onAppear / 设置变更）触发，不在 `AppleInterfaceThemeChangedNotification`
+    /// 回调里，因此这里直接读 `NSApp.effectiveAppearance` 是安全的——读到的是最新值。
+    static func resolvedThemePath() -> String? {
         let sources: [String] = [SettingsConfigStore.defaultPath] + configPaths
         for path in sources where FileManager.default.fileExists(atPath: path) {
             let kvs = parseFile(at: path)
             guard let themeValue = kvs.first(where: { $0.0 == "theme" })?.1,
                   !themeValue.isEmpty else { continue }
-            let dark = isDark ?? (NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
-            let name = resolveThemeNameForAppearance(themeValue, isDark: dark)
+            let isDark = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let name = resolveThemeNameForAppearance(themeValue, isDark: isDark)
             return locateTheme(named: name)
         }
         return nil
