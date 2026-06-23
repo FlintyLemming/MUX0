@@ -10,6 +10,14 @@ struct ContentView: View {
     @State private var quickActionsStore: QuickActionsStore
     @State private var sidebarCollapsed: Bool = false
     @State private var showSettings: Bool = false
+    /// 当前 ContentView 宿主窗口。用于过滤 NSWindow 全屏通知——
+    /// `NotificationCenter.publisher(for:)` 不带 `object:` 时会收到所有窗口的
+    /// 通知，多窗口下窗口 A 进全屏会误伤窗口 B 的透明度。
+    @State private var hostWindow: NSWindow?
+    /// 当前宿主窗口是否全屏（per-window）。ThemeManager 是 app 级单例、多窗口
+    /// 共享，无法持有 per-window 状态，故全屏标志下放到这里。全屏时所有 opacity
+    /// 在视图层覆盖为 1.0，避免半透明层叠在 macOS 全屏纯黑背景上显灰。
+    @State private var isFullScreen: Bool = false
     @State private var hookListener: HookSocketListener?
     @State private var updateStore = UpdateStore(
         currentVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
@@ -52,11 +60,11 @@ struct ContentView: View {
     }
 
     var body: some View {
-        let bgOpacity = themeManager.backgroundOpacity
+        let bgOpacity = isFullScreen ? 1.0 : themeManager.backgroundOpacity
         // 中间内容区（卡片 canvas、paneContainer、tab strip、Settings 各层等）都走
         // 这个乘过 contentOpacity 的 effective 值，让用户可以在保持 sidebar 透明度
-        // 不变的前提下，单独把中心多层叠加的浓度再降一档。
-        let contentBg = themeManager.contentEffectiveOpacity
+        // 不变的前提下，单独把中心多层叠加的浓度再降一档。全屏时强制 1.0。
+        let contentBg = isFullScreen ? 1.0 : themeManager.contentEffectiveOpacity
         return ZStack(alignment: .topLeading) {
             HStack(spacing: 0) {
                 if !sidebarCollapsed {
@@ -158,10 +166,19 @@ struct ContentView: View {
             // (re-)install or tear down the macOS blur layer driven by the current
             // `background-blur-radius` config value.
             GhosttyBridge.shared.applyWindowBackgroundBlur(to: window)
+            // 记住宿主窗口，供下方全屏通知回调过滤 object——不过滤的话窗口 A
+            // 进全屏会把窗口 B 的 isFullScreen 也带成 true。
+            let isFirstCapture = hostWindow == nil
+            hostWindow = window
             // 首次拿到 window 时用其真实全屏状态兜底初始化：macOS 状态恢复可能
             // 在启动时直接把窗口还原为全屏，而此时不会发 willEnterFullScreen 通知，
-            // 不兜底就会在全屏黑底上叠半透明层显出偏灰。只生效一次，之后交给通知。
-            themeManager.syncInitialFullScreen(window.styleMask.contains(.fullScreen))
+            // 不兜底就会在全屏黑底上叠半透明层显出灰。只首次生效；之后交给
+            // willEnter/didExit 通知，以保留刻意设计的进/退场时序（进场 willEnter
+            // 在动画前、退场 didExit 在动画后），避免动画中 styleMask 还未更新时
+            // 用 styleMask 同步把 isFullScreen 拉回错误值。
+            if isFirstCapture {
+                isFullScreen = window.styleMask.contains(.fullScreen)
+            }
         }
         // 让整窗 NSAppearance 跟随 ghostty 主题亮度。SwiftUI 里的 LabeledContent
         // label、TextField 背景、Slider/Stepper/Picker 默认控件都依赖 NSAppearance
@@ -169,6 +186,12 @@ struct ContentView: View {
         // 的情况（尤其在 SettingsView 的 Form 里）。锁到 theme.isDark 后这些系统控件
         // 会跟主题一致。不影响 sidebar/tab bar —— 它们本来就读 theme token。
         .preferredColorScheme(themeManager.theme.isDark ? .dark : .light)
+        // 把 per-window 的 effective content opacity 注入 environment，供
+        // SettingsView / SettingsTabBarView / ThemedTextField / IconButton /
+        // ThemePickerView 等直接读 contentEffectiveOpacity 的 SwiftUI 子视图使用。
+        // 这些视图不经过 ContentView 的参数传递，只能通过 environment 拿到当前
+        // 窗口的全屏覆盖结果——ThemeManager 是全局单例无法 per-window 返回。
+        .environment(\.effectiveContentOpacity, contentBg)
         .onAppear {
             themeManager.loadFromGhosttyConfig()
             // ghostty 的 PWD action（OSC 7）回调在 main 上通知 pwdStore，sidebar
@@ -251,11 +274,17 @@ struct ContentView: View {
         .onChange(of: store.selectedWorkspace?.selectedTabId) { _, _ in
             statusStore.markRead(terminalIds: visibleTerminalIds)
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { _ in
-            themeManager.setFullScreen(true)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
+            // 只处理本视图宿主窗口的通知：NSWindow 全屏通知是 per-window 的，
+            // 但 publisher(for:) 不带 object: 会收到所有窗口的事件。多窗口下若
+            // 不过滤，窗口 A 进全屏会误把窗口 B 的 isFullScreen 置 true，导致 B
+            // 被强制不透明。
+            guard (note.object as? NSWindow) === hostWindow else { return }
+            isFullScreen = true
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
-            themeManager.setFullScreen(false)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
+            guard (note.object as? NSWindow) === hostWindow else { return }
+            isFullScreen = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .mux0OpenSettings)) { note in
             if let raw = note.userInfo?["section"] as? String,
@@ -396,4 +425,22 @@ extension Notification.Name {
     /// signature — Form(.grouped) splits a row out into its own card if
     /// any neighbour differs.
     static let mux0CodexHookAlert       = Notification.Name("mux0.codexHookAlert")
+}
+
+// MARK: - Per-window effective content opacity
+
+private struct EffectiveContentOpacityKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1.0
+}
+
+extension EnvironmentValues {
+    /// 当前窗口"中间内容层"实际使用的不透明度，已叠加 per-window 全屏覆盖。
+    /// 由 ContentView 根据 `isFullScreen` 计算 `contentBg` 后注入，
+    /// 供 SettingsView / IconButton / ThemedTextField / ThemePickerView 等
+    /// 直接读 `themeManager.contentEffectiveOpacity` 的视图改读此值——
+    /// 避免每个视图各自判断全屏，也避免全局 ThemeManager 单例污染多窗口。
+    var effectiveContentOpacity: CGFloat {
+        get { self[EffectiveContentOpacityKey.self] }
+        set { self[EffectiveContentOpacityKey.self] = newValue }
+    }
 }

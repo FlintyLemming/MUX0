@@ -8,8 +8,8 @@ struct SettingsView: View {
     let quickActionsStore: QuickActionsStore
     let onClose: () -> Void
 
-    @Environment(ThemeManager.self) private var themeManager
     @Environment(\.locale) private var locale
+    @Environment(\.effectiveContentOpacity) private var effectiveContentOpacity
     @State private var section: SettingsSection
 
     init(
@@ -54,7 +54,7 @@ struct SettingsView: View {
             .padding(.horizontal, DT.Space.xs)
             .padding(.bottom, DT.Space.xs)
         }
-        .background(Color(theme.canvas).opacity(themeManager.contentEffectiveOpacity))
+        .background(Color(theme.canvas).opacity(effectiveContentOpacity))
         // .tint 通过 env 传给所有 Slider/Toggle/Picker 等，把系统蓝强调色换成主题 accent。
         .tint(Color(theme.accent))
         // 允许 sidebar 的版本号点击在 Settings 已经打开时再次跳转到 Update section。
@@ -95,10 +95,10 @@ struct SettingsView: View {
         }
         .padding(.horizontal, DT.Space.md)
         .padding(.vertical, DT.Space.sm)
-        .background(Color(theme.canvas).opacity(themeManager.contentEffectiveOpacity))
+        .background(Color(theme.canvas).opacity(effectiveContentOpacity))
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(Color(theme.border).opacity(0.5 * themeManager.contentEffectiveOpacity))
+                .fill(Color(theme.border).opacity(0.5 * effectiveContentOpacity))
                 .frame(height: DT.Stroke.hairline)
         }
     }

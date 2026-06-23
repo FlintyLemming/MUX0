@@ -127,7 +127,7 @@ private struct ThemeDropdown: View {
     @Binding var selection: String
     let theme: AppTheme
 
-    @Environment(ThemeManager.self) private var themeManager
+    @Environment(\.effectiveContentOpacity) private var effectiveContentOpacity
     @Environment(\.locale) private var locale
     @State private var open = false
     @State private var query = ""
@@ -151,11 +151,11 @@ private struct ThemeDropdown: View {
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color(theme.sidebar).opacity(themeManager.contentEffectiveOpacity))
+                    .fill(Color(theme.sidebar).opacity(effectiveContentOpacity))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(Color(theme.border).opacity(themeManager.contentEffectiveOpacity), lineWidth: 0.5)
+                    .strokeBorder(Color(theme.border).opacity(effectiveContentOpacity), lineWidth: 0.5)
             )
             .contentShape(Rectangle())
         }

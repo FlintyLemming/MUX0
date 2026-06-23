@@ -30,7 +30,7 @@ private struct IconButtonHoverStyle: ButtonStyle {
     let theme: AppTheme
     let hovering: Bool
 
-    @Environment(ThemeManager.self) private var themeManager
+    @Environment(\.effectiveContentOpacity) private var effectiveContentOpacity
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -41,13 +41,12 @@ private struct IconButtonHoverStyle: ButtonStyle {
     }
 
     private func fill(pressed: Bool) -> Color {
-        // 交互反馈继承窗口背景透明度 —— 乘 contentEffectiveOpacity 让按钮 hover /
+        // 交互反馈继承窗口背景透明度 —— 乘 effectiveContentOpacity 让按钮 hover /
         // press 时的色块和整体半透背景保持同档浓度，不会突兀。
-        let opacity = themeManager.contentEffectiveOpacity
         if pressed {
-            return Color(theme.borderStrong).opacity(opacity)
+            return Color(theme.borderStrong).opacity(effectiveContentOpacity)
         } else if hovering {
-            return Color(theme.border).opacity(opacity)
+            return Color(theme.border).opacity(effectiveContentOpacity)
         }
         return .clear
     }

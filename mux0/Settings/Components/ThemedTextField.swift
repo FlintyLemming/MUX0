@@ -6,7 +6,7 @@ import SwiftUI
 struct ThemedTextFieldStyle: ViewModifier {
     let theme: AppTheme
 
-    @Environment(ThemeManager.self) private var themeManager
+    @Environment(\.effectiveContentOpacity) private var effectiveContentOpacity
 
     func body(content: Content) -> some View {
         content
@@ -19,11 +19,11 @@ struct ThemedTextFieldStyle: ViewModifier {
             .padding(.vertical, DT.Space.xs + 1)
             .background(
                 RoundedRectangle(cornerRadius: DT.Radius.row, style: .continuous)
-                    .fill(Color(theme.sidebar).opacity(themeManager.contentEffectiveOpacity))
+                    .fill(Color(theme.sidebar).opacity(effectiveContentOpacity))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: DT.Radius.row, style: .continuous)
-                    .strokeBorder(Color(theme.border).opacity(themeManager.contentEffectiveOpacity), lineWidth: DT.Stroke.hairline * 0.5)
+                    .strokeBorder(Color(theme.border).opacity(effectiveContentOpacity), lineWidth: DT.Stroke.hairline * 0.5)
             )
     }
 }

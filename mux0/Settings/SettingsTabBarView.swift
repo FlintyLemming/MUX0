@@ -9,11 +9,11 @@ struct SettingsTabBarView: View {
     @Binding var selection: SettingsSection
     let onClose: () -> Void
 
-    @Environment(ThemeManager.self) private var themeManager
+    @Environment(\.effectiveContentOpacity) private var effectiveContentOpacity
     @Environment(\.locale) private var locale
 
     var body: some View {
-        let opacity = themeManager.contentEffectiveOpacity
+        let opacity = effectiveContentOpacity
         return HStack(spacing: 0) {
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: TabBarView.stripRadius, style: .continuous)
@@ -63,7 +63,7 @@ struct SettingsTabBarView: View {
                 .background(
                     RoundedRectangle(cornerRadius: TabBarView.pillRadius, style: .continuous)
                         .fill(Color(isSelected ? theme.canvas : .clear)
-                            .opacity(isSelected ? themeManager.contentEffectiveOpacity : 1))
+                            .opacity(isSelected ? effectiveContentOpacity : 1))
                 )
                 .contentShape(Rectangle())
         }
