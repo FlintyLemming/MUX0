@@ -49,6 +49,19 @@ extension View {
                 window.backgroundColor = opaque ? nil : .clear
                 window.hasShadow = true
                 _ = blurRadius
+                // 内容靠 SwiftUI 侧 `.ignoresSafeArea()` 顶进标题栏区，但 NSHostingView
+                // 仍上报约 28pt 的顶部 safe-area inset（来自标题栏）。这会把 AppKit 代表性
+                // 子视图（tab 栏的 TabContentView）整体下推 28pt，而 SwiftUI 仍把它们绘制在
+                // 顶部——于是点击可见的 tab 落在真实 AppKit frame 上方 28pt 处，命中不到 pill，
+                // 转而被标题栏的拖窗逻辑接管。抵消标题栏的 safe-area 贡献，让绘制与命中共用
+                // 同一套坐标系（mouseDownCanMoveWindow=false 链才能真正生效）。
+                if let contentView = window.contentView {
+                    let titlebarInset = max(0, window.frame.height - window.contentLayoutRect.height)
+                    if contentView.additionalSafeAreaInsets.top != -titlebarInset {
+                        contentView.additionalSafeAreaInsets = NSEdgeInsets(
+                            top: -titlebarInset, left: 0, bottom: 0, right: 0)
+                    }
+                }
                 onWindow(window)
             }
         )
