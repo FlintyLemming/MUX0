@@ -205,7 +205,7 @@ struct ContentView: View {
             if isFirstCapture {
                 isFullScreen = window.styleMask.contains(.fullScreen)
             }
-            // 把红绿灯改为竖向堆叠排到窗口左上角（macOS 全屏进出会复位，故每次 configure 重应用）。
+            // 让红绿灯竖直中心对齐顶部控件/tab 栏那一排（macOS 全屏进出会复位，故每次 configure 重应用）。
             alignTrafficLights(in: window)
         }
         // 让整窗 NSAppearance 跟随 ghostty 主题亮度。SwiftUI 里的 LabeledContent
@@ -356,37 +356,25 @@ struct ContentView: View {
         themeManager.applyWindowEffects(opacity: opacity, blurRadius: blur, contentOpacity: content, contentShadow: shadow)
     }
 
-    /// 把红绿灯三个按钮改为「竖向堆叠」排在窗口左上角：close 在上、miniaturize 居中、
-    /// zoom 在下，左沿距窗口左边缘 == 最上按钮上沿距顶边缘（leftInset == topInset）。
-    ///
-    /// 竖排至少要 ~50pt 高，而 macOS 标题栏只有 ~28pt——留在 NSTitlebarView 里会被裁切，
-    /// 且超出父视图 bounds 后命中测试失效（点不动）。因此把三个按钮重新挂到窗口顶层
-    /// frameView（contentView.superview，跨整窗高度），坐标在该视图非翻转系下计算。
-    /// 每次 window configure 重应用，覆盖 macOS 在全屏进出后把按钮拉回标题栏的复位。
+    /// 把红绿灯整体下移，使其竖直中心与顶部控件/tab 栏（headerControlsTop 那一排）对齐。
+    /// macOS 标题栏只有 ~28pt：放得下就精确对齐到目标中心，放不下则夹到标题栏内尽量靠下
+    /// （避免裁切）。每次 window configure 重应用，覆盖 macOS 在全屏进出后的复位。
     private func alignTrafficLights(in window: NSWindow) {
-        let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
-        let buttons = types.compactMap { window.standardWindowButton($0) }
-        guard buttons.count == 3,
-              let frameView = window.contentView?.superview,
-              frameView.bounds.height > 100 else { return }
-
-        let bh = buttons[0].bounds.height                 // 系统按钮直径，~14
         let targetCenterFromTop = headerControlsTop + iconButtonSize / 2
-        let leftInset = targetCenterFromTop - bh / 2      // 左 == 上
-        let step = bh + 6                                 // 复用系统横排 ~20pt 中心间距
-        let H = frameView.bounds.height
-
-        for (i, button) in buttons.enumerated() {
-            // 重挂到 frameView（仅在尚未挂上时），保留按钮自身 target/action（关闭/最小化/缩放）。
-            if button.superview !== frameView {
-                button.removeFromSuperview()
-                frameView.addSubview(button)
-            }
-            // 第 i 个按钮上沿距窗口顶 = topInset + i*step；frameView 非翻转：y = H - 上沿 - bh。
-            let topEdge = leftInset + CGFloat(i) * step
-            let target = NSPoint(x: leftInset, y: H - topEdge - bh)
-            if abs(button.frame.origin.x - target.x) > 0.5 || abs(button.frame.origin.y - target.y) > 0.5 {
-                button.setFrameOrigin(target)
+        let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        for type in types {
+            guard let button = window.standardWindowButton(type),
+                  let titlebar = button.superview else { continue }
+            let h = titlebar.bounds.height
+            // 仅当 superview 确是标题栏（矮）时调整，避免误把整窗 frame view 当标题栏。
+            guard h > 0, h < 100 else { continue }
+            let bh = button.bounds.height
+            // 标题栏非翻转坐标（y 自底向上）：按钮中心距顶 = target → origin.y =
+            // h - target - bh/2，夹到 [0, h-bh] 不越界裁切。
+            let raw = h - targetCenterFromTop - bh / 2
+            let clamped = max(0, min(h - bh, raw))
+            if abs(button.frame.origin.y - clamped) > 0.5 {
+                button.setFrameOrigin(NSPoint(x: button.frame.origin.x, y: clamped))
             }
         }
     }
