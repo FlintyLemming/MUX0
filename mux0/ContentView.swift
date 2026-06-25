@@ -362,36 +362,35 @@ struct ContentView: View {
 
     /// 把红绿灯（横排）整体定位到窗口左上角：竖直中心对齐顶部控件那排（headerControlsTop），
     /// 且左沿距窗口左边缘 == 上沿距顶边缘（左/上等距）。
-    ///
-    /// 关键：内容视图已被叠到标题栏容器之上（见 WindowAccessor），否则标题栏会盖住按钮且
-    /// 吞掉 tab 拖拽。因此这里把三个按钮**重挂到 frameView 顶层**（在内容之上）保持可见可点，
-    /// 坐标在 frameView 非翻转系下计算；横向以最左 closeButton 为基准整体平移、保持系统间距。
-    /// 每次 window configure 重应用，覆盖 macOS 在全屏进出后把按钮塞回标题栏的复位。
+    /// macOS 标题栏只有 ~28pt：竖向放得下就精确对齐目标中心，放不下则夹到标题栏内尽量靠下
+    /// （避免裁切）；横向以最左 closeButton 为基准整体平移、保持系统默认间距。
+    /// 每次 window configure 重应用，覆盖 macOS 在全屏进出后的复位。
     private func alignTrafficLights(in window: NSWindow) {
-        let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
-        let buttons = types.compactMap { window.standardWindowButton($0) }
-        guard buttons.count == 3,
-              let frameView = window.contentView?.superview,
-              frameView.bounds.height > 100 else { return }
-
-        let bh = buttons[0].bounds.height
         let targetCenterFromTop = headerControlsTop + iconButtonSize / 2
-        let topInset = targetCenterFromTop - bh / 2
-        // 重挂前记录各按钮 x（标题栏与 frameView 同为整宽、x 不变；幂等：第二次进来时
-        // 已在 frameView 且 x 已是平移后的值，xDelta 自然为 0）。以最左 close 为基准保间距。
-        let xs = buttons.map { $0.frame.origin.x }
-        let xDelta = topInset - xs[0]
-        let H = frameView.bounds.height
-        // 非翻转坐标（y 自底向上）：三个按钮同一行，上沿距顶 = topInset → originY = H - topInset - bh。
-        let newY = H - topInset - bh
+        let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
 
-        for (i, button) in buttons.enumerated() {
-            // 重挂到 frameView 并置于最前（盖在已上移的 contentView 之上）。已在 frameView 时
-            // 再次 addSubview 只是把它提到最前，保留按钮自身 target/action（关闭/最小化/缩放）。
-            frameView.addSubview(button)
-            let newX = xs[i] + xDelta
-            if abs(button.frame.origin.x - newX) > 0.5 || abs(button.frame.origin.y - newY) > 0.5 {
-                button.setFrameOrigin(NSPoint(x: newX, y: newY))
+        // 横向左对齐：以最左的 closeButton 为基准，让它的左沿距窗口左边缘 ==
+        // 上沿距窗口顶边缘（topInset，左/上等距），三个按钮整体平移、保持系统默认间距。
+        guard let closeButton = window.standardWindowButton(.closeButton),
+              let closeTitlebar = closeButton.superview,
+              closeTitlebar.bounds.height > 0, closeTitlebar.bounds.height < 100 else { return }
+        let topInset = targetCenterFromTop - closeButton.bounds.height / 2
+        let xDelta = topInset - closeButton.frame.origin.x
+
+        for type in types {
+            guard let button = window.standardWindowButton(type),
+                  let titlebar = button.superview else { continue }
+            let h = titlebar.bounds.height
+            // 仅当 superview 确是标题栏（矮）时调整，避免误把整窗 frame view 当标题栏。
+            guard h > 0, h < 100 else { continue }
+            let bh = button.bounds.height
+            // 标题栏非翻转坐标（y 自底向上）：按钮中心距顶 = target → origin.y =
+            // h - target - bh/2，夹到 [0, h-bh] 不越界裁切。
+            let raw = h - targetCenterFromTop - bh / 2
+            let clampedY = max(0, min(h - bh, raw))
+            let newX = button.frame.origin.x + xDelta
+            if abs(button.frame.origin.y - clampedY) > 0.5 || abs(button.frame.origin.x - newX) > 0.5 {
+                button.setFrameOrigin(NSPoint(x: newX, y: clampedY))
             }
         }
     }

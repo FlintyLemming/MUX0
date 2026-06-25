@@ -62,20 +62,6 @@ extension View {
                             top: -titlebarInset, left: 0, bottom: 0, right: 0)
                     }
                 }
-                // 把内容视图叠到标题栏容器之上。否则 NSTitlebarContainerView（fullSizeContent
-                // 下 z-order 在内容之上）自带的「拖标题栏移动窗口」tracking 会吃掉 tab 条上的
-                // 拖拽，且不理会内容视图的 mouseDownCanMoveWindow=false（已知约束）。叠上去后，
-                // 顶部 28pt 内的拖拽改由内容各视图自决：tab pill = false → 只做内部重排不拖窗，
-                // 空白区 = true → 仍可拖动窗口。交通灯按钮随后由 alignTrafficLights 重挂到内容
-                // 之上保持可点。
-                if let content = window.contentView,
-                   let frameView = content.superview,
-                   let titlebar = frameView.subviews.first(where: {
-                       String(describing: type(of: $0)).contains("TitlebarContainer")
-                   }),
-                   frameView.subviews.last !== content {
-                    frameView.addSubview(content, positioned: .above, relativeTo: titlebar)
-                }
                 onWindow(window)
             }
         )
