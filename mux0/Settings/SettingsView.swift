@@ -37,13 +37,14 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 四向 xs 内边距 + 下方 xs 间隔，对齐 TabContentView.layout 里 tab 条的边距。
+            // tab 条 flush 贴顶（top inset = 0），对齐 TabContentView.layout 的 flush 终端 tab 栏，
+            // 让分类 pill 中心落到 20、与交通灯 / 顶部控件同排；左右 / 下方仍留 xs。
             SettingsTabBarView(
                 theme: theme,
                 selection: $section,
                 onClose: onClose
             )
-            .padding(.top, DT.Space.xs)
+            .padding(.top, 0)
             .padding(.leading, DT.Space.xs + tabStripLeadingReserve)
             .padding(.trailing, DT.Space.xs)
             .padding(.bottom, DT.Space.xs)

@@ -42,10 +42,12 @@ struct ContentView: View {
     private let iconButtonSize: CGFloat = 22
     /// 折叠态品牌 + 齿轮簇的容器宽度（右对齐用，给定一个够宽的盒子，品牌串变长只向左伸）。
     private let collapsedBrandClusterWidth: CGFloat = 100
-    /// 顶部控件（toggle / 品牌 / 齿轮 / 新建）顶部内距：让 22pt 控件与上移后的 tab 栏
-    /// pill 垂直居中。pill 中心 = cardInset(top) + tab 栏内缩(xs) + 高度/2。
+    /// 顶部控件（toggle / 品牌 / 齿轮 / 新建）顶部内距：让 22pt 控件与 tab 栏 pill 垂直居中。
+    /// tab 栏 flush 贴 card 顶（无内部 top inset，见 TabContentView.layout），故 pill 中心 =
+    /// cardInset(top) + 高度/2 = 20。整行（pill / 控件 / 交通灯目标）都对齐到这个中心——20 是
+    /// 标题栏（~28pt）能把交通灯下探到的位置；旧值 24（带 4pt 内缩）标题栏够不着，会偏高。
     private var headerControlsTop: CGFloat {
-        cardInset + DT.Space.xs + (TabBarView.height - iconButtonSize) / 2
+        cardInset + (TabBarView.height - iconButtonSize) / 2
     }
     /// toggle 的 leading：中心对齐 sidebar 图标列（= sidebarWidth - 25，与 footer 齿轮 /
     /// 行状态点同轴），折叠/展开都固定不动，右侧与 tab 栏保持 ~18pt 间距。

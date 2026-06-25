@@ -150,11 +150,13 @@ final class TabContentView: NSView {
             stripLeft = inset
         }
         let stripW = max(0, bounds.width - inset - stripLeft)
+        // tab 栏 flush 贴顶（无 top inset）：pill 中心落到 cardInset + tbH/2 = 20，整行与
+        // macOS 交通灯能下探到的位置对齐（见 ContentView.headerControlsTop / alignTrafficLights）。
         tabBar.frame = NSRect(
-            x: stripLeft, y: bounds.height - tbH - inset,
+            x: stripLeft, y: bounds.height - tbH,
             width: stripW, height: tbH)
 
-        let paneH = max(0, bounds.height - tbH - inset * 2 - gap)
+        let paneH = max(0, bounds.height - tbH - inset - gap)
         paneContainer.frame = NSRect(x: inset, y: inset, width: contentW, height: paneH)
         // Pane's autoresizingMask keeps it filling paneContainer on layout passes.
     }
