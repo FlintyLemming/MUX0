@@ -103,13 +103,14 @@ final class TabBarView: NSView {
     /// 当前鼠标对应的 insertion index（0…tabs.count）。
     private var previewInsertionIndex: Int?
 
-    /// 标题栏拖窗锁：tab 栏落在顶部 ~28pt 标题栏拖拽区内，macOS 会把这里的拖动解读为
-    /// 「拖标题栏移窗」，且在事件派发到视图**之前**就启动，TabItemView.mouseDown 根本收不到
-    /// （单击能选中、但一拖就被抢走）。用 local event monitor 在事件派发前先判断：若 leftMouseDown
-    /// 命中 tab pill，就临时把 window.isMovable 关掉，标题栏便不再启动拖窗，事件正常流到
-    /// TabItemView 驱动内部重排；mouseUp / 拖拽结束复原，空白区拖窗不受影响。
-    private var dragLockMonitor: Any?
+    /// 标题栏拖窗锁。tab 栏落在顶部 ~28pt 标题栏拖拽区内，拖 tab 时窗口会被「拖标题栏移窗」
+    /// 一起拖走（与 tab 同向运动 → tab 相对没动、拖不动）。根因：WindowServer 是独立进程，
+    /// 在 mouseDown 那一刻按它**缓存的** window.isMovable 决定要不要拖窗——同一轮事件里再改
+    /// isMovable 太晚（这正是 mouseDownCanMoveWindow / mouseDown 时关锁都无效的原因）。
+    /// 对策：用覆盖整条 tab 栏的 tracking area，光标**一进入就**把 isMovable 关掉（早于按下，
+    /// 让 WindowServer 缓存到 false），离开再复原。空白区拖窗不受影响。
     private var savedWindowIsMovable: Bool?
+    private var dragLockTrackingArea: NSTrackingArea?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -117,55 +118,38 @@ final class TabBarView: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    deinit {
-        if let monitor = dragLockMonitor { NSEvent.removeMonitor(monitor) }
-    }
-
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil {
-            installDragLockMonitorIfNeeded()
-        } else {
-            // 复原任何残留的锁，再撤掉 monitor
-            restoreWindowMovable()
-            if let monitor = dragLockMonitor {
-                NSEvent.removeMonitor(monitor)
-                dragLockMonitor = nil
-            }
+        if window == nil { restoreWindowMovable() }
+    }
+
+    /// 悬停即锁：覆盖整条 tab 栏的 tracking area，光标一进入就把 window.isMovable 关掉
+    /// （**早于**按下，让 WindowServer 在 mouseDown 那刻拿到的缓存就是 false——同一轮事件里
+    /// 改太晚拦不住），离开再复原。空白区拖窗不受影响。
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let ta = dragLockTrackingArea { removeTrackingArea(ta) }
+        let ta = NSTrackingArea(rect: bounds,
+                                options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+                                owner: self, userInfo: nil)
+        addTrackingArea(ta)
+        dragLockTrackingArea = ta
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        if let window = window, savedWindowIsMovable == nil {
+            savedWindowIsMovable = window.isMovable
+            window.isMovable = false
         }
     }
 
-    private func installDragLockMonitorIfNeeded() {
-        guard dragLockMonitor == nil else { return }
-        dragLockMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
-            self?.handleDragLock(event)
-            return event
-        }
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        restoreWindowMovable()
     }
 
-    /// local monitor 在事件派发前运行：mouseDown 命中 pill → 锁窗；mouseUp → 复原。
-    private func handleDragLock(_ event: NSEvent) {
-        guard let window = window, event.window === window else { return }
-        switch event.type {
-        case .leftMouseDown:
-            // 用内容树自己的 hitTest（不经标题栏 z-order）判断按点是否落在某个 tab pill 上。
-            // NSView.hitTest 接收父视图坐标系的点；contentView 的父视图（theme frame）与窗口
-            // 基坐标系一致，故直接传 locationInWindow（不再 convert）。
-            if let content = window.contentView,
-               let hit = content.hitTest(event.locationInWindow),
-               hit.isDescendant(of: self),
-               savedWindowIsMovable == nil {
-                savedWindowIsMovable = window.isMovable
-                window.isMovable = false
-            }
-        case .leftMouseUp:
-            restoreWindowMovable()
-        default:
-            break
-        }
-    }
-
-    /// 复原被 monitor 关掉的 window.isMovable（幂等）。拖拽结束时也会兜底调用。
+    /// 复原临时关掉的 window.isMovable（幂等）。拖拽结束 / 离开 tab 栏 / 脱离窗口时调用。
     fileprivate func restoreWindowMovable() {
         if let saved = savedWindowIsMovable {
             window?.isMovable = saved
@@ -507,8 +491,8 @@ final class TabBarView: NSView {
 
     /// 清除 preview 状态并原地恢复布局（无动画，避免 rebuild 前的闪烁）。
     fileprivate func cleanupAfterDrag() {
-        // 拖拽路径常不再投递 mouseUp，monitor 的 leftMouseUp 可能收不到——这里兜底复原锁。
-        restoreWindowMovable()
+        // 注意：window.isMovable 的复原交给 mouseExited（悬停生命周期），这里不碰——
+        // 拖拽结束时光标可能仍在 tab 栏上，过早复原会让紧接着的下一次拖拽又锁不住。
         guard draggingTabId != nil || previewInsertionIndex != nil else { return }
         draggingTabId = nil
         previewInsertionIndex = nil
@@ -986,6 +970,7 @@ private final class TabItemView: NSView, NSTextFieldDelegate, NSDraggingSource {
                          sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         return .move
     }
+
 
     /// 松手后（drop 成功与否都触发）通知 TabBarView 清 preview state。
     /// 成功 drop 时 performDragOperation 已清理过；这里是失败路径兜底。
