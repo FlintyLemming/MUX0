@@ -370,6 +370,13 @@ final class TabContentView: NSView {
         GhosttyTerminalView.makeFrontmost(nil)
         terminalViews.values.forEach { $0.isHidden = true }
         removeKeyMonitor()
+        tabBar.releaseTitlebarDragLock()
+    }
+
+    /// 由 TabBridge 在 tab 内容被隐藏（如打开 Settings 覆盖层）时调用：键盘 ⌘, 打开 Settings
+    /// 不会让 tab 栏收到 mouseExited，悬停锁会把 window.isMovable 永久留在 false——这里显式解锁。
+    func releaseTitlebarDragLock() {
+        tabBar.releaseTitlebarDragLock()
     }
 
     private func removeKeyMonitor() {

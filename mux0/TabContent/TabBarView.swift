@@ -109,7 +109,13 @@ final class TabBarView: NSView {
     /// isMovable 太晚（这正是 mouseDownCanMoveWindow / mouseDown 时关锁都无效的原因）。
     /// 对策：用覆盖整条 tab 栏的 tracking area，光标**一进入就**把 isMovable 关掉（早于按下，
     /// 让 WindowServer 缓存到 false），离开再复原。空白区拖窗不受影响。
+    ///
+    /// 复原必须对准**当初被锁的那个窗口实例**（`lockedWindow`），而非 `self.window`：detach /
+    /// 全屏切换后 `self.window` 可能已是 nil 或换了窗口，靠它复原会把锁永久留在原窗口上。
+    /// 除 mouseExited 外，detach / 脱离窗口 / Settings 覆盖（用键盘 ⌘, 打开时不产生 mouseExited）
+    /// 都要显式调 `releaseTitlebarDragLock()`，否则窗口会卡在不可拖动。
     private var savedWindowIsMovable: Bool?
+    private weak var lockedWindow: NSWindow?
     private var dragLockTrackingArea: NSTrackingArea?
 
     override init(frame: NSRect) {
@@ -118,19 +124,22 @@ final class TabBarView: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    deinit { releaseTitlebarDragLock() }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil { restoreWindowMovable() }
+        // 换窗口 / 脱离窗口：先复原老窗口的锁（用 lockedWindow，不是已变化的 self.window）。
+        if window !== lockedWindow { releaseTitlebarDragLock() }
     }
 
-    /// 悬停即锁：覆盖整条 tab 栏的 tracking area，光标一进入就把 window.isMovable 关掉
-    /// （**早于**按下，让 WindowServer 在 mouseDown 那刻拿到的缓存就是 false——同一轮事件里
-    /// 改太晚拦不住），离开再复原。空白区拖窗不受影响。
+    /// 悬停即锁：覆盖整条 tab 栏的 tracking area，光标一进入 / 在其上移动就把 window.isMovable
+    /// 关掉（**早于**按下，让 WindowServer 在 mouseDown 那刻拿到的缓存就是 false——同一轮事件里
+    /// 改太晚拦不住），离开再复原。`.mouseMoved` 让锁能在 Settings 关闭后、光标仍在条上时自愈。
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let ta = dragLockTrackingArea { removeTrackingArea(ta) }
         let ta = NSTrackingArea(rect: bounds,
-                                options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+                                options: [.activeAlways, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect],
                                 owner: self, userInfo: nil)
         addTrackingArea(ta)
         dragLockTrackingArea = ta
@@ -138,23 +147,35 @@ final class TabBarView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
-        if let window = window, savedWindowIsMovable == nil {
-            savedWindowIsMovable = window.isMovable
-            window.isMovable = false
-        }
+        lockTitlebarDrag()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        lockTitlebarDrag()
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
-        restoreWindowMovable()
+        releaseTitlebarDragLock()
     }
 
-    /// 复原临时关掉的 window.isMovable（幂等）。拖拽结束 / 离开 tab 栏 / 脱离窗口时调用。
-    fileprivate func restoreWindowMovable() {
+    /// 锁住当前窗口的 isMovable（幂等，记下被锁实例与原值）。
+    private func lockTitlebarDrag() {
+        guard savedWindowIsMovable == nil, let window = window else { return }
+        savedWindowIsMovable = window.isMovable
+        lockedWindow = window
+        window.isMovable = false
+    }
+
+    /// 复原临时关掉的 window.isMovable（幂等）。对准当初被锁的窗口实例，而非 self.window。
+    /// 离开 tab 栏 / detach / 脱离窗口 / Settings 覆盖 tab 内容时都要调用。
+    func releaseTitlebarDragLock() {
         if let saved = savedWindowIsMovable {
-            window?.isMovable = saved
-            savedWindowIsMovable = nil
+            lockedWindow?.isMovable = saved
         }
+        savedWindowIsMovable = nil
+        lockedWindow = nil
     }
 
     private func setup() {

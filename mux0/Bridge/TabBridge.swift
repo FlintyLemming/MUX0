@@ -18,6 +18,9 @@ struct TabBridge: NSViewRepresentable {
     /// 语言切换 ticker：ContentView 透传 languageStore.tick。任何变化触发 updateNSView，
     /// 我们在里面调 TabContentView.refreshLocalizedStrings() 让子 AppKit view 重读静态文案。
     var languageTick: Int
+    /// tab 内容当前是否可交互。Settings 覆盖层显示时为 false——此时显式解开 tab 栏的标题栏
+    /// 拖窗锁（⌘, 用键盘打开不会产生 mouseExited，否则 window.isMovable 会卡在 false）。
+    var interactive: Bool = true
 
     @Environment(\.locale) private var locale
 
@@ -53,6 +56,8 @@ struct TabBridge: NSViewRepresentable {
                                  showStatusIndicators: showStatusIndicators)
         }
         nsView.refreshLocalizedStrings(locale: locale)
+        // tab 内容被 Settings 覆盖隐藏时，显式解开标题栏拖窗锁（避免 ⌘, 键盘打开后窗口卡死）。
+        if !interactive { nsView.releaseTitlebarDragLock() }
     }
 
     static func dismantleNSView(_ nsView: TabContentView, coordinator: ()) {

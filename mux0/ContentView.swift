@@ -108,7 +108,8 @@ struct ContentView: View {
                         theme: themeManager.theme,
                         backgroundOpacity: contentBg,
                         showStatusIndicators: showStatusIndicators,
-                        languageTick: languageStore.tick
+                        languageTick: languageStore.tick,
+                        interactive: !showSettings
                     )
                     .opacity(showSettings ? 0 : 1)
                     .allowsHitTesting(!showSettings)
