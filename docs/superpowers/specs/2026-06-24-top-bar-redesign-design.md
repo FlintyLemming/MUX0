@@ -23,7 +23,7 @@
 
 ### 顶部控件簇（`ContentView` 顶层 ZStack overlay）
 - 展开：`[toggle][addWorkspace ＋]`（保持现状）。
-- 折叠：`[品牌按钮][更新红点][齿轮][toggle]`，品牌/齿轮复用现有跳转通知（Settings → Update / 打开设置）。
+- 折叠：`[品牌按钮（贴红绿灯右侧）] …留白… [齿轮][toggle]`——品牌名贴左，齿轮 + toggle 成组贴右（齿轮与展开态 ＋ 同槽位），品牌/齿轮复用现有跳转通知（Settings → Update / 打开设置）。
 - 品牌按钮 + 齿轮抽成可共享小视图，`SidebarView` footer 与顶部 overlay 复用，避免重复实现。
 
 ### tab 栏 `＋` 下拉（`TabBarView`）
