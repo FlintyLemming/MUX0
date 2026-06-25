@@ -121,6 +121,10 @@ struct ContentView: View {
                             workspaceStore: store,
                             quickActionsStore: quickActionsStore,
                             initialSection: pendingSettingsSection,
+                            // 折叠态：卡片左沿移到 cardInset，tab 栏须额外预留出
+                            // (sidebarWidth - xs) 才能让左沿落到与普通 tab 栏一致的
+                            // 窗口 x（sidebarWidth + xs），避开左上角品牌/齿轮/toggle。
+                            tabStripLeadingReserve: sidebarCollapsed ? DT.Layout.sidebarWidth - DT.Space.xs : 0,
                             onClose: { showSettings = false }
                         )
                     }

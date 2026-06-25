@@ -6,6 +6,9 @@ struct SettingsView: View {
     let updateStore: UpdateStore
     let workspaceStore: WorkspaceStore
     let quickActionsStore: QuickActionsStore
+    /// 仅加在 tab 栏左侧的额外预留（section body 仍全宽）：侧边栏折叠时让设置页
+    /// tab 栏左沿落到与普通 tab 栏相同的窗口 x，避免顶到左上角的品牌/齿轮/toggle。
+    let tabStripLeadingReserve: CGFloat
     let onClose: () -> Void
 
     @Environment(\.locale) private var locale
@@ -19,6 +22,7 @@ struct SettingsView: View {
         workspaceStore: WorkspaceStore,
         quickActionsStore: QuickActionsStore,
         initialSection: SettingsSection? = nil,
+        tabStripLeadingReserve: CGFloat = 0,
         onClose: @escaping () -> Void
     ) {
         self.theme = theme
@@ -26,6 +30,7 @@ struct SettingsView: View {
         self.updateStore = updateStore
         self.workspaceStore = workspaceStore
         self.quickActionsStore = quickActionsStore
+        self.tabStripLeadingReserve = tabStripLeadingReserve
         self.onClose = onClose
         _section = State(initialValue: initialSection ?? .appearance)
     }
@@ -39,7 +44,8 @@ struct SettingsView: View {
                 onClose: onClose
             )
             .padding(.top, DT.Space.xs)
-            .padding(.horizontal, DT.Space.xs)
+            .padding(.leading, DT.Space.xs + tabStripLeadingReserve)
+            .padding(.trailing, DT.Space.xs)
             .padding(.bottom, DT.Space.xs)
 
             // sectionBody + footer 共处同一圆角卡片，边界上的 hairline 由 footer
