@@ -205,7 +205,7 @@ struct ContentView: View {
             if isFirstCapture {
                 isFullScreen = window.styleMask.contains(.fullScreen)
             }
-            // 让红绿灯竖直中心对齐顶部控件/tab 栏那一排（macOS 全屏进出会复位，故每次 configure 重应用）。
+            // 红绿灯横排，竖直中心对齐顶部控件那排、左沿与上沿等距（macOS 全屏进出会复位，故每次 configure 重应用）。
             alignTrafficLights(in: window)
         }
         // 让整窗 NSAppearance 跟随 ghostty 主题亮度。SwiftUI 里的 LabeledContent
@@ -356,12 +356,23 @@ struct ContentView: View {
         themeManager.applyWindowEffects(opacity: opacity, blurRadius: blur, contentOpacity: content, contentShadow: shadow)
     }
 
-    /// 把红绿灯整体下移，使其竖直中心与顶部控件/tab 栏（headerControlsTop 那一排）对齐。
-    /// macOS 标题栏只有 ~28pt：放得下就精确对齐到目标中心，放不下则夹到标题栏内尽量靠下
-    /// （避免裁切）。每次 window configure 重应用，覆盖 macOS 在全屏进出后的复位。
+    /// 把红绿灯（横排）整体定位到窗口左上角：竖直中心对齐顶部控件那排（headerControlsTop），
+    /// 且左沿距窗口左边缘 == 上沿距顶边缘（左/上等距）。
+    /// macOS 标题栏只有 ~28pt：竖向放得下就精确对齐目标中心，放不下则夹到标题栏内尽量靠下
+    /// （避免裁切）；横向以最左 closeButton 为基准整体平移、保持系统默认间距。
+    /// 每次 window configure 重应用，覆盖 macOS 在全屏进出后的复位。
     private func alignTrafficLights(in window: NSWindow) {
         let targetCenterFromTop = headerControlsTop + iconButtonSize / 2
         let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+
+        // 横向左对齐：以最左的 closeButton 为基准，让它的左沿距窗口左边缘 ==
+        // 上沿距窗口顶边缘（topInset，左/上等距），三个按钮整体平移、保持系统默认间距。
+        guard let closeButton = window.standardWindowButton(.closeButton),
+              let closeTitlebar = closeButton.superview,
+              closeTitlebar.bounds.height > 0, closeTitlebar.bounds.height < 100 else { return }
+        let topInset = targetCenterFromTop - closeButton.bounds.height / 2
+        let xDelta = topInset - closeButton.frame.origin.x
+
         for type in types {
             guard let button = window.standardWindowButton(type),
                   let titlebar = button.superview else { continue }
@@ -372,9 +383,10 @@ struct ContentView: View {
             // 标题栏非翻转坐标（y 自底向上）：按钮中心距顶 = target → origin.y =
             // h - target - bh/2，夹到 [0, h-bh] 不越界裁切。
             let raw = h - targetCenterFromTop - bh / 2
-            let clamped = max(0, min(h - bh, raw))
-            if abs(button.frame.origin.y - clamped) > 0.5 {
-                button.setFrameOrigin(NSPoint(x: button.frame.origin.x, y: clamped))
+            let clampedY = max(0, min(h - bh, raw))
+            let newX = button.frame.origin.x + xDelta
+            if abs(button.frame.origin.y - clampedY) > 0.5 || abs(button.frame.origin.x - newX) > 0.5 {
+                button.setFrameOrigin(NSPoint(x: newX, y: clampedY))
             }
         }
     }
