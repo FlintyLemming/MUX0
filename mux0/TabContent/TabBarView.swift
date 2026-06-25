@@ -53,10 +53,10 @@ final class TabBarView: NSView {
     private var canClose: Bool { tabs.count > 1 }
 
     /// strip 的固有高度——外层由 TabContentView 统一负责 4pt 内缩。
-    /// 24（而非 32）：tab 栏上方恢复 4pt 间距后，pill 行中心须保持在「距顶 20」才能与
-    /// macOS 交通灯对齐（标题栏 ~28pt 只能把交通灯压到 ~21），故高度收到 24：
-    /// cardInset(4) + 上间距(4) + 24/2 = 20。
-    static let height: CGFloat = 24
+    /// 32：tab 栏上方留 4pt 间距（四边对称），pill 行中心 = cardInset(4)+上间距(4)+32/2 = 24。
+    /// 注：标题栏 ~28pt 只能把交通灯压到中心 ~21，故交通灯会比 24 的 tab 行偏高 ~3pt——
+    /// 这是「保留上间距 + 全高 32」必然的取舍（详见 ContentView.headerControlsTop）。
+    static let height: CGFloat = 32
     /// 单位间距：同时用于 (1) pill 到 strip 顶/底 (2) tab 之间 (3) 首尾 tab 到 strip 左右
     static let pillInset: CGFloat = 3
     /// 同心圆角：外层 card 的半径减去 TabContentView 统一提供的内缩。

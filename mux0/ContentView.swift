@@ -44,9 +44,10 @@ struct ContentView: View {
     /// 齿轮↔toggle 的可见间距一致（按 2x 截图实测校准）。与右侧那一组分居两端。
     private let collapsedBrandLeading: CGFloat = 84
     /// 顶部控件（toggle / 品牌 / 齿轮 / 新建）顶部内距：让 22pt 控件与 tab 栏 pill 垂直居中。
-    /// tab 栏在 card 内上方留 xs(4pt) 内缩（见 TabContentView.layout），tbH 收到 24，故
-    /// pill 中心 = cardInset(4) + xs(4) + 24/2 = 20。整行（pill / 控件 / 交通灯目标）都对齐到
-    /// 这个中心——20 是标题栏（~28pt）能把交通灯下探到的位置，再低（如 24）就够不着、会偏高。
+    /// tab 栏在 card 内上方留 xs(4pt) 内缩（见 TabContentView.layout），tbH = 32，故
+    /// pill 中心 = cardInset(4) + xs(4) + 32/2 = 24，控件 / 交通灯目标都对齐到这个中心。
+    /// 注：标题栏（~28pt）只能把交通灯压到中心 ~21，够不着 24 → 交通灯会比 tab 行偏高
+    /// ~3pt。这是「保留四边对称的 4pt 上间距 + tab 全高 32」的取舍（用户优先要这个观感）。
     private var headerControlsTop: CGFloat {
         cardInset + DT.Space.xs + (TabBarView.height - iconButtonSize) / 2
     }
