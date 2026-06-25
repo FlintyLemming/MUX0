@@ -58,8 +58,9 @@ struct SidebarView: View {
             )
             // 顶部留出与 traffic light 区的呼吸：原 header 撤掉后，第一行
             // workspace 直接贴到 28pt traffic light inset 下沿会显得局促；
-            // lg(16) 让 workspace 列表距 trafficLightInset 下沿有足够喘息。
-            .padding(.top, DT.Space.lg)
+            // lg + xs(20) 让 workspace 列表距 trafficLightInset 下沿有足够喘息——
+            // tab 行新增 4pt 上间距、整体顶区下移后，第一行随之多让 4pt 才不显得贴交通灯。
+            .padding(.top, DT.Space.lg + DT.Space.xs)
             footer
         }
         .frame(width: DT.Layout.sidebarWidth)
