@@ -37,14 +37,15 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // tab 条 flush 贴顶（top inset = 0），对齐 TabContentView.layout 的 flush 终端 tab 栏，
-            // 让分类 pill 中心落到 20、与交通灯 / 顶部控件同排；左右 / 下方仍留 xs。
+            // tab 条上方留 xs(4pt) 内缩，对齐 TabContentView.layout 的终端 tab 栏，让分类
+            // pill 中心落到 20（cardInset 4 + xs 4 + tbH/2 12）、与交通灯 / 顶部控件同排；
+            // 四边内缩一致（左右 / 上 / 下均 xs）。
             SettingsTabBarView(
                 theme: theme,
                 selection: $section,
                 onClose: onClose
             )
-            .padding(.top, 0)
+            .padding(.top, DT.Space.xs)
             .padding(.leading, DT.Space.xs + tabStripLeadingReserve)
             .padding(.trailing, DT.Space.xs)
             .padding(.bottom, DT.Space.xs)

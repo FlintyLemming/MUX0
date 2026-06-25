@@ -44,11 +44,11 @@ struct ContentView: View {
     /// 齿轮↔toggle 的可见间距一致（按 2x 截图实测校准）。与右侧那一组分居两端。
     private let collapsedBrandLeading: CGFloat = 84
     /// 顶部控件（toggle / 品牌 / 齿轮 / 新建）顶部内距：让 22pt 控件与 tab 栏 pill 垂直居中。
-    /// tab 栏 flush 贴 card 顶（无内部 top inset，见 TabContentView.layout），故 pill 中心 =
-    /// cardInset(top) + 高度/2 = 20。整行（pill / 控件 / 交通灯目标）都对齐到这个中心——20 是
-    /// 标题栏（~28pt）能把交通灯下探到的位置；旧值 24（带 4pt 内缩）标题栏够不着，会偏高。
+    /// tab 栏在 card 内上方留 xs(4pt) 内缩（见 TabContentView.layout），tbH 收到 24，故
+    /// pill 中心 = cardInset(4) + xs(4) + 24/2 = 20。整行（pill / 控件 / 交通灯目标）都对齐到
+    /// 这个中心——20 是标题栏（~28pt）能把交通灯下探到的位置，再低（如 24）就够不着、会偏高。
     private var headerControlsTop: CGFloat {
-        cardInset + (TabBarView.height - iconButtonSize) / 2
+        cardInset + DT.Space.xs + (TabBarView.height - iconButtonSize) / 2
     }
     /// toggle 的 leading：中心对齐 sidebar 图标列（= sidebarWidth - 25，与 footer 齿轮 /
     /// 行状态点同轴），折叠/展开都固定不动，右侧与 tab 栏保持 ~18pt 间距。
