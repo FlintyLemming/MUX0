@@ -40,9 +40,9 @@ struct ContentView: View {
     private let cardRadius: CGFloat = DT.Radius.card
     /// IconButton 固定边长（见 IconButton）。
     private let iconButtonSize: CGFloat = 22
-    /// 折叠态品牌名「Mux0」的 leading：贴红绿灯右侧（红绿灯簇右沿 ≈ 67），留约 8pt 间距，
-    /// 与右侧的齿轮 / toggle 分居两端（见下方 ZStack 折叠分支）。
-    private let collapsedBrandLeading: CGFloat = 76
+    /// 折叠态品牌名「Mux0」的 leading：红绿灯簇可见右沿 ≈ 74，留约 12pt 间距——与右侧
+    /// 齿轮↔toggle 的可见间距一致（按 2x 截图实测校准）。与右侧那一组分居两端。
+    private let collapsedBrandLeading: CGFloat = 84
     /// 顶部控件（toggle / 品牌 / 齿轮 / 新建）顶部内距：让 22pt 控件与 tab 栏 pill 垂直居中。
     /// tab 栏 flush 贴 card 顶（无内部 top inset，见 TabContentView.layout），故 pill 中心 =
     /// cardInset(top) + 高度/2 = 20。整行（pill / 控件 / 交通灯目标）都对齐到这个中心——20 是
