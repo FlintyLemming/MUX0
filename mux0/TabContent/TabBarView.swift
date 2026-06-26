@@ -273,6 +273,7 @@ final class TabBarView: NSView {
                                  displayTitle: displayTitle(for: tab))
                 }
             }
+            updateSeparators()
             return
         }
 
@@ -294,6 +295,8 @@ final class TabBarView: NSView {
             item.onResetAutoTitle = { [weak self] in self?.onResetAutoTitle?(tab.id) }
             // drop 失败（拖到 TabBarView 外）时，source 端 sessionEnded 会触发——清理 preview state
             item.onDragEnded = { [weak self] in self?.cleanupAfterDrag() }
+            // hover 变化时重算相邻分割线可见性（浏览器 tab 行为）
+            item.onHoverChanged = { [weak self] in self?.updateSeparators() }
             tabsContainer.addSubview(item)
         }
         layoutTabItems()
@@ -333,6 +336,25 @@ final class TabBarView: NSView {
             }
         } else {
             apply()
+        }
+        updateSeparators()
+    }
+
+    /// 重算每个 tab 右侧分割线的可见性（浏览器 tab 行为）。规则：仅当本 tab 与其右邻
+    /// 都未选中、未 hover，且当前没有拖拽进行时，才显示二者之间的分割线；最后一个 tab
+    /// 右侧紧邻 strip 边缘/"+"，不画线。
+    private func updateSeparators() {
+        let items = tabsContainer.subviews.compactMap { $0 as? TabItemView }
+        guard !items.isEmpty else { return }
+        let ordered = previewOrdered(items: items)
+        let dragging = draggingTabId != nil
+        for (i, item) in ordered.enumerated() {
+            let next: TabItemView? = (i + 1 < ordered.count) ? ordered[i + 1] : nil
+            let show = !dragging
+                && next != nil
+                && !item.isSelectedTab && !item.isHoveredState
+                && !(next?.isSelectedTab ?? true) && !(next?.isHoveredState ?? true)
+            item.showsRightSeparator = show
         }
     }
 
@@ -584,8 +606,27 @@ private final class TabItemView: NSView, NSTextFieldDelegate, NSDraggingSource {
     var onResetAutoTitle: (() -> Void)?
     /// 在 drag session 结束时（无论是否成功 drop）调用——用来让 TabBarView 清除 preview 状态。
     var onDragEnded: (() -> Void)?
+    /// hover 进/出时调用——让 TabBarView 重新评估相邻分割线的可见性（浏览器 tab 行为：
+    /// 被 hover / 选中的 tab 两侧分割线隐藏）。
+    var onHoverChanged: (() -> Void)?
     var canClose: Bool = true
     private var userRenamed: Bool = false
+
+    /// 暴露给 TabBarView.updateSeparators 读取（分割线可见性取决于自身与右邻的选中 / hover 态）。
+    fileprivate var isSelectedTab: Bool { isSelected }
+    fileprivate var isHoveredState: Bool { isHovered }
+
+    /// 右侧 gap 中央的竖直分割线（类似浏览器 tab）。可见性由 TabBarView 统一控制。
+    private let separatorLayer = CALayer()
+    var showsRightSeparator: Bool = false {
+        didSet {
+            guard oldValue != showsRightSeparator else { return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            separatorLayer.isHidden = !showsRightSeparator
+            CATransaction.commit()
+        }
+    }
 
     /// 拖拽 preview 中被拖 item 的 "占位" 显示——淡化 alpha 暗示它会被移走。
     var isDragGhost: Bool = false {
@@ -646,6 +687,11 @@ private final class TabItemView: NSView, NSTextFieldDelegate, NSDraggingSource {
     private func setup() {
         wantsLayer = true
 
+        // 分割线挂在 view 自身 layer 上（而非 pillView，pillView masksToBounds 会裁掉
+        // 落在右侧 gap 中的线）。默认隐藏，由 TabBarView.updateSeparators 控制可见性。
+        separatorLayer.isHidden = true
+        layer?.addSublayer(separatorLayer)
+
         pillView.wantsLayer = true
         pillView.layer?.masksToBounds = true
         addSubview(pillView)
@@ -703,6 +749,17 @@ private final class TabItemView: NSView, NSTextFieldDelegate, NSDraggingSource {
         let pillH = h - vInset * 2
         pillView.frame = NSRect(x: 0, y: vInset, width: bounds.width, height: pillH)
         pillView.layer?.cornerRadius = TabBarView.pillRadius
+
+        // 分割线落在本 tab 右边缘外侧的 gap 中央，高度取 pill 的一半并垂直居中。
+        let sepW: CGFloat = 1
+        let sepH = (pillH * 0.5).rounded()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        separatorLayer.frame = NSRect(
+            x: bounds.width + (TabBarView.pillInset - sepW) / 2,
+            y: (h - sepH) / 2,
+            width: sepW, height: sepH)
+        CATransaction.commit()
 
         let margin: CGFloat = 10
         let trailingIconSize: CGFloat = showStatusIndicators ? TerminalStatusIconView.size : 0
@@ -933,6 +990,10 @@ private final class TabItemView: NSView, NSTextFieldDelegate, NSDraggingSource {
             titleLabel.textColor = theme.textSecondary
         }
         kindIcon.contentTintColor = titleLabel.textColor
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        separatorLayer.backgroundColor = theme.border.cgColor
+        CATransaction.commit()
         needsDisplay = true
     }
 
@@ -940,11 +1001,13 @@ private final class TabItemView: NSView, NSTextFieldDelegate, NSDraggingSource {
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
         updateStyle()
+        onHoverChanged?()
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
         updateStyle()
+        onHoverChanged?()
     }
 
     private var mouseDownLocation: NSPoint = .zero
