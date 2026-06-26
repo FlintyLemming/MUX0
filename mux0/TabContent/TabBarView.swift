@@ -992,8 +992,7 @@ private final class TabItemView: NSView, NSTextFieldDelegate, NSDraggingSource {
         kindIcon.contentTintColor = titleLabel.textColor
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        // 与选中态 pill 背景同色（theme.canvas）
-        separatorLayer.backgroundColor = theme.canvas.withAlphaComponent(backgroundOpacity).cgColor
+        separatorLayer.backgroundColor = theme.border.cgColor
         CATransaction.commit()
         needsDisplay = true
     }
