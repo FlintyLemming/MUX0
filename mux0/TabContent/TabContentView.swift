@@ -460,10 +460,26 @@ final class TabContentView: NSView {
     // MARK: - Close confirmation
 
     private func confirmCloseTab(_ tabId: UUID) {
-        guard let window,
-              let wsId = store?.selectedId,
+        guard let wsId = store?.selectedId,
               let ws = store?.workspaces.first(where: { $0.id == wsId }),
+              ws.tabs.count > 1,
               let tab = ws.tabs.first(where: { $0.id == tabId }) else { return }
+
+        let terminalStatuses = tab.layout.allTerminalIds().map { terminalId in
+            statusStore?.status(for: terminalId) ?? .neverRan
+        }
+        let needsConfirm = TabCloseConfirmationPolicy.needsConfirmation(
+            setting: settingsStore?.get("confirm-close-surface"),
+            statuses: terminalStatuses
+        )
+
+        guard needsConfirm else {
+            store?.removeTab(id: tabId, from: wsId)
+            reloadFromStore()
+            return
+        }
+
+        guard let window else { return }
 
         let alert = NSAlert()
         alert.messageText = L10n.string("tab.close.alert.title")
