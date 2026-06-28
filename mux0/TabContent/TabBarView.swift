@@ -1017,6 +1017,11 @@ private final class TabItemView: NSView, NSTextFieldDelegate, NSDraggingSource {
         onSelect?()
     }
 
+    override func otherMouseDown(with event: NSEvent) {
+        guard canClose else { return }
+        onClose?()
+    }
+
     override func mouseDragged(with event: NSEvent) {
         // Rename 中不启动拖拽
         if isRenaming { return }
