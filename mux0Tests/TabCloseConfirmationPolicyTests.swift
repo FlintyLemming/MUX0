@@ -38,7 +38,16 @@ final class TabCloseConfirmationPolicyTests: XCTestCase {
     func testTrueSettingConfirmsForNeedsInputStatus() {
         XCTAssertTrue(TabCloseConfirmationPolicy.needsConfirmation(
             setting: "true",
-            statuses: [.needsInput(since: now)]
+            statuses: [.needsInput(since: now)],
+            surfaceNeedsConfirmation: false
+        ))
+    }
+
+    func testTrueSettingConfirmsWhenGhosttySurfaceNeedsConfirmation() {
+        XCTAssertTrue(TabCloseConfirmationPolicy.needsConfirmation(
+            setting: "true",
+            statuses: [.neverRan, .idle(since: now)],
+            surfaceNeedsConfirmation: true
         ))
     }
 
@@ -86,6 +95,30 @@ final class TabCloseConfirmationPolicyTests: XCTestCase {
         XCTAssertTrue(TabCloseConfirmationPolicy.needsConfirmation(
             setting: " Always ",
             statuses: [.neverRan]
+        ))
+    }
+}
+
+final class TabMiddleClickClosePolicyTests: XCTestCase {
+    func testOnlyMiddleMouseButtonClosesTab() {
+        XCTAssertTrue(TabMiddleClickClosePolicy.shouldClose(
+            buttonNumber: 2,
+            canClose: true
+        ))
+        XCTAssertFalse(TabMiddleClickClosePolicy.shouldClose(
+            buttonNumber: 3,
+            canClose: true
+        ))
+        XCTAssertFalse(TabMiddleClickClosePolicy.shouldClose(
+            buttonNumber: 4,
+            canClose: true
+        ))
+    }
+
+    func testMiddleMouseButtonRespectsCanClose() {
+        XCTAssertFalse(TabMiddleClickClosePolicy.shouldClose(
+            buttonNumber: 2,
+            canClose: false
         ))
     }
 }

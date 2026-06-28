@@ -1,6 +1,12 @@
 import AppKit
 import SwiftUI
 
+enum TabMiddleClickClosePolicy {
+    static func shouldClose(buttonNumber: Int, canClose: Bool) -> Bool {
+        canClose && buttonNumber == 2
+    }
+}
+
 /// NSView 子类，点击不触发窗口拖动。tab 栏上移进顶部标题栏拖拽区后，透明 NSView
 /// 默认 `mouseDownCanMoveWindow=true`，点击会被 titlebar 拖窗行为吞掉而不触发选中。
 private final class NonDraggableView: NSView {
@@ -1018,7 +1024,10 @@ private final class TabItemView: NSView, NSTextFieldDelegate, NSDraggingSource {
     }
 
     override func otherMouseDown(with event: NSEvent) {
-        guard canClose else { return }
+        guard TabMiddleClickClosePolicy.shouldClose(
+            buttonNumber: event.buttonNumber,
+            canClose: canClose
+        ) else { return }
         onClose?()
     }
 

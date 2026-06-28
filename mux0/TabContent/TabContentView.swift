@@ -2,7 +2,8 @@ import AppKit
 
 enum TabCloseConfirmationPolicy {
     static func needsConfirmation(setting rawSetting: String?,
-                                  statuses: [TerminalStatus]) -> Bool {
+                                  statuses: [TerminalStatus],
+                                  surfaceNeedsConfirmation: Bool = false) -> Bool {
         let setting = rawSetting?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
@@ -13,7 +14,7 @@ enum TabCloseConfirmationPolicy {
         case "always":
             return true
         default:
-            return statuses.contains { status in
+            return surfaceNeedsConfirmation || statuses.contains { status in
                 switch status {
                 case .running, .needsInput:
                     return true
@@ -468,9 +469,13 @@ final class TabContentView: NSView {
         let terminalStatuses = tab.layout.allTerminalIds().map { terminalId in
             statusStore?.status(for: terminalId) ?? .neverRan
         }
+        let surfaceNeedsConfirmation = tab.layout.allTerminalIds().contains { terminalId in
+            terminalViews[terminalId]?.needsConfirmQuit ?? false
+        }
         let needsConfirm = TabCloseConfirmationPolicy.needsConfirmation(
             setting: settingsStore?.get("confirm-close-surface"),
-            statuses: terminalStatuses
+            statuses: terminalStatuses,
+            surfaceNeedsConfirmation: surfaceNeedsConfirmation
         )
 
         guard needsConfirm else {
