@@ -527,6 +527,13 @@ final class TabContentView: NSView {
         guard let ws = store?.selectedWorkspace,
               let wsId = store?.selectedId,
               let tab = ws.selectedTab else { return }
+
+        let terminalIds = tab.layout.allTerminalIds()
+        if terminalIds.count <= 1 {
+            confirmCloseTab(tab.id)
+            return
+        }
+
         store?.closeTerminal(id: tab.focusedTerminalId, in: wsId, tabId: tab.id)
         reloadFromStore()
     }
