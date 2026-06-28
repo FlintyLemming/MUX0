@@ -1,5 +1,30 @@
 import AppKit
 
+enum TabCloseConfirmationPolicy {
+    static func needsConfirmation(setting rawSetting: String?,
+                                  statuses: [TerminalStatus]) -> Bool {
+        let setting = rawSetting?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        switch setting {
+        case "false":
+            return false
+        case "always":
+            return true
+        default:
+            return statuses.contains { status in
+                switch status {
+                case .running, .needsInput:
+                    return true
+                case .neverRan, .idle, .success, .failed:
+                    return false
+                }
+            }
+        }
+    }
+}
+
 /// Top-level content view that combines the tab bar and the active tab's split pane.
 ///
 /// ## Caching strategy
